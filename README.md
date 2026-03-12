@@ -1,4 +1,4 @@
-# practica_1_ssooii
+# Primera Práctica SSOOII
 
 1. Hacer el código necesario para gestionar los argumentos que se le pasan al programa
 
