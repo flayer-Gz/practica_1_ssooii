@@ -1,3 +1,11 @@
+/*
+ * AUTORES:
+ *
+ * Victor LOpez SAnchez
+ * Mario LOpez PErez
+ */
+
+
 #include "parking.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +55,7 @@ int main(int argc, char *argv[])
 
     /* CreaciOn de los semAforos */
     // TODO
+
 
     /* CreaciOn de la memoria compartida */
     // TODO
