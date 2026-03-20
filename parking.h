@@ -7,10 +7,10 @@
 #define CYAN     6
 #define BLANCO   7
 
-#define PRIMER_AJUSTE 0
+#define PRIMER_AJUSTE    0
 #define SIGUIENTE_AJUSTE 1
-#define MEJOR_AJUSTE 2
-#define PEOR_AJUSTE 3 
+#define MEJOR_AJUSTE     2
+#define PEOR_AJUSTE      3 
 
 
 typedef int HCoche;
@@ -19,10 +19,11 @@ typedef int HCoche;
 #define PARKING_MSGSUB_APARCAR      1
 #define PARKING_MSGSUB_DESAPARCAR   2
 
-struct PARKING_mensajeBiblioteca
- {long   tipo;
-  long   subtipo;
-  HCoche hCoche;};
+struct PARKING_mensajeBiblioteca{
+    long   tipo;
+    long   subtipo;
+    HCoche hCoche;
+};
   
 typedef int  (*TIPO_FUNCION_LLEGADA)              (HCoche hc);
 typedef int  (*TIPO_FUNCION_SALIDA)               (HCoche hc);

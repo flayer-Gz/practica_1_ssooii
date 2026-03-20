@@ -14,18 +14,23 @@
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <signal.h>
+#include <unistd.h>
 
 /* Macros */
-#define USER_SEM 1
-#define USER_SHM 4
+#define NUM_USER_SEM 1  // SemAforos para el usuario
+#define NUM_USER_SHM 4  // Bytes de memoria comp. para el usuario
 
 
+// EstA bien que sean globales?
+struct msqid_ds *msqid_buf;
+struct shmid_ds *shmid_buf;
 
+int limpiarRecursos(int sem_id, int shm_id, int buz_id);
 
 int main(int argc, char *argv[])
 {
 
-      
+   // TODO:  sigaction(SIGINT,);
 
 
 
@@ -86,14 +91,10 @@ int main(int argc, char *argv[])
     /* Ejecucion */
     int debug;
 
-
     if (PARKING_inicio(velocidad, NULL, sem_id, buz_id, shm_id, debug) == -1){
         perror("Error al iniciar el parking, tontito");
-        // Linpiar los recursos y acabar
+        // Limpiar los recursos y acabar
     }
-
-
-
 
 
 
@@ -103,26 +104,14 @@ int main(int argc, char *argv[])
 
 
     /* LiberaciOn de recursos */
-    
 
-
-
-
-
-
-
-
-
-/*
-    if (limpiarRecursos(sem_id, shmid, buz_id)){
+    if (limpiarRecursos(sem_id, shm_id, buz_id)){
         return 1;
     }
-    */
-	    return 0;
+	
+    return 0;
 }
 
-
-/*
 
 int limpiarRecursos(int sem_id, int shm_id, int buz_id){
     int cod_err=0;
@@ -131,16 +120,14 @@ int limpiarRecursos(int sem_id, int shm_id, int buz_id){
         perror("Error al liberar recurso: semaforos");
         cod_err = 1;
     }
-    if (msgctl(buz_id, IPC_RMID, ) == -1){
+    if (msgctl(buz_id, IPC_RMID, msqid_buf) == -1){
         perror("Error al liberar recurso: buzon");
         cod_err = 1;
     }
-    if (shmctl(shm_id, IPC_RMID, ) == -1){
+    if (shmctl(shm_id, IPC_RMID, shmid_buf) == -1){
         perror("Error al liberar recurso: memoria compartida");
         cod_err = 1;
     }
 
     return cod_err;
 }
-
-*/
