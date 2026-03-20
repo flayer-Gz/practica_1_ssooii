@@ -29,3 +29,12 @@
 14. Diseñad la forma de acabar sin problemas y llamad a la función PARKING_fin().
 
 15. Pulid los últimos detalles.
+
+
+CONSEJOS SOBRE LA ESTRUCTURA:
+
+Proceso padre con hijos (chóferes)
+
+El proceso padre es el encargado de la simulacion, este tiene un buzon al que envia un mensaje de tipo 100 cada vez que pasa algo en la simulacion (aparcar, desaparcar).
+
+
