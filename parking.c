@@ -43,10 +43,6 @@ int main(int argc, char *argv[])
 
 
 
-
-      
-
-
     /* Comprobacion argumentos */
     if (argc == 1){
         puts("Llamada esperada: parking velocidad nchofers [D] [PA | PD]");
@@ -95,14 +91,14 @@ int main(int argc, char *argv[])
     /* CreaciOn de la memoria compartida */
     if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + NUM_USER_SHM, IPC_CREAT | 0600)) == -1){
 		perror("Error al reservar la memoria compartida.");
-		limpiarRecursos(sem_id, shm_id, buz_id);
+		kill(getpid(), SIGINT);
 		return 1;
 	}
 
     /* CreaciOn de los buzones */
     if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
 		perror("Error al crear el buzon.");
-		limpiarRecursos(sem_id, shm_id, buz_id);
+		kill(getpid(), SIGINT);
 		return 1;
 	}
 
@@ -111,24 +107,24 @@ int main(int argc, char *argv[])
     int debug=0;	// debug = D ???
 
     if (PARKING_inicio(velocidad, NULL, sem_id, buz_id, shm_id, debug) == -1){
-        perror("Error al iniciar el parking, tontito");
-        limpiarRecursos(sem_id, shm_id, buz_id);
+        perror("Error al ejecutar PARKING_inicio.");
+        kill(getpid(), SIGINT);
 		return 1;
     }
 
+	// TODO: Crear procesos hijos (chOferes)
+
+
+	// TODO: Llamada a PARKING_simulaciOn()
 
 
 
+	sleep(30);
 
 
 
-
-    /* LiberaciOn de recursos */
-    if (limpiarRecursos(sem_id, shm_id, buz_id)){
-		return 1;
-    } else
-		write(STDOUT_FILENO, "\nRecursos liberados correctamente.\n", 35);
-	
+    /* LiberaciOn de recursos y finalizaciOn */
+	kill(getpid(), SIGINT);
     return 0;
 }
 
@@ -156,7 +152,12 @@ int limpiarRecursos(int sem_id, int shm_id, int buz_id){
 }
 
 void manejadorSIGINT(int sig) {
-    write(STDOUT_FILENO, "\nSIGINT recibido. Liberando recursos...\n", 40);
-    limpiarRecursos(sem_id, shm_id, buz_id);
-    _exit(1);
+    write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
+    if (limpiarRecursos(sem_id, shm_id, buz_id)){
+		write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
+		return;
+    } else
+		write(STDOUT_FILENO, "Recursos liberados correctamente.\n", 34);
+
+	_exit(1);	// Deja a los hijos huerfanos
 }
