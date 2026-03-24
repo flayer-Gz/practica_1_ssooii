@@ -5,6 +5,10 @@
  * Mario LOpez PErez
  */
 
+ /* Macros */
+#define _POSIX_C_SOURCE 200809L // Para sigaction
+#define NUM_USER_SEM 1  // SemAforos para el usuario
+#define NUM_USER_SHM 4  // Bytes de memoria comp. para el usuario
 
 #include "parking.h"
 #include <stdio.h>
@@ -16,21 +20,26 @@
 #include <signal.h>
 #include <unistd.h>
 
-/* Macros */
-#define NUM_USER_SEM 1  // SemAforos para el usuario
-#define NUM_USER_SHM 4  // Bytes de memoria comp. para el usuario
+// IPC IDs
+int sem_id = -1;
+int shm_id = -1;
+int buz_id = -1;
 
-
-// EstA bien que sean globales?
-struct msqid_ds *msqid_buf;
-struct shmid_ds *shmid_buf;
-
+/* Prototipos */
 int limpiarRecursos(int sem_id, int shm_id, int buz_id);
+void manejadorSIGINT(int sig);
 
 int main(int argc, char *argv[])
 {
 
-   // TODO:  sigaction(SIGINT,);
+    struct sigaction sa;
+	sa.sa_handler = manejadorSIGINT;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(SIGINT, &sa, NULL) == -1) {
+	    perror("Error al registrar SIGINT");
+	    return 1;
+	}
 
 
 
@@ -78,22 +87,33 @@ int main(int argc, char *argv[])
 	}
 
     /* CreaciOn de los semAforos */
-    int sem_id = semget(IPC_PRIVATE, PARKING_getNSemAforos() + USER_SEM, IPC_CREAT | 0600);
+    if ((sem_id = semget(IPC_PRIVATE, PARKING_getNSemAforos() + NUM_USER_SEM, IPC_CREAT | 0600)) == -1){
+		perror("Error al crear los semAforos.");
+		return 1;
+	}
 
     /* CreaciOn de la memoria compartida */
-    int shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + USER_SHM, IPC_CREAT | 0600);
+    if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + NUM_USER_SHM, IPC_CREAT | 0600)) == -1){
+		perror("Error al reservar la memoria compartida.");
+		limpiarRecursos(sem_id, shm_id, buz_id);
+		return 1;
+	}
 
     /* CreaciOn de los buzones */
-    int buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600); // Posibles permisos: 0444
-                                                        // Preguntar que permisos usar, 0060?
+    if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
+		perror("Error al crear el buzon.");
+		limpiarRecursos(sem_id, shm_id, buz_id);
+		return 1;
+	}
 
 
     /* Ejecucion */
-    int debug;
+    int debug=0;	// debug = D ???
 
     if (PARKING_inicio(velocidad, NULL, sem_id, buz_id, shm_id, debug) == -1){
         perror("Error al iniciar el parking, tontito");
-        // Limpiar los recursos y acabar
+        limpiarRecursos(sem_id, shm_id, buz_id);
+		return 1;
     }
 
 
@@ -104,30 +124,39 @@ int main(int argc, char *argv[])
 
 
     /* LiberaciOn de recursos */
-
     if (limpiarRecursos(sem_id, shm_id, buz_id)){
-        return 1;
-    }
+		return 1;
+    } else
+		write(STDOUT_FILENO, "\nRecursos liberados correctamente.\n", 35);
 	
     return 0;
 }
 
 
+
+
+
 int limpiarRecursos(int sem_id, int shm_id, int buz_id){
     int cod_err=0;
 
-    if (semctl(sem_id, 0, IPC_RMID) == -1){
+    if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
         perror("Error al liberar recurso: semaforos");
         cod_err = 1;
     }
-    if (msgctl(buz_id, IPC_RMID, msqid_buf) == -1){
+    if ((buz_id != -1) && (msgctl(buz_id, IPC_RMID, NULL) == -1)){	// IPC_RMID no utiliza el bufer -> se le puede pasar NULL
         perror("Error al liberar recurso: buzon");
         cod_err = 1;
     }
-    if (shmctl(shm_id, IPC_RMID, shmid_buf) == -1){
+    if ((shm_id != -1) && (shmctl(shm_id, IPC_RMID, NULL) == -1)){
         perror("Error al liberar recurso: memoria compartida");
         cod_err = 1;
     }
 
     return cod_err;
+}
+
+void manejadorSIGINT(int sig) {
+    write(STDOUT_FILENO, "\nSIGINT recibido. Liberando recursos...\n", 40);
+    limpiarRecursos(sem_id, shm_id, buz_id);
+    _exit(1);
 }
