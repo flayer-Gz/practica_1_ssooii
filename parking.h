@@ -57,3 +57,5 @@ int PARKING_isAceraOcupada(int algoritmo,int pos);
 int PARKING_getTamaNoMemoriaCompartida();
 int PARKING_getNSemAforos();
 
+void pon_error(char *mensaje);
+

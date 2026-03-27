@@ -26,8 +26,12 @@ int shm_id = -1;
 int buz_id = -1;
 
 /* Prototipos */
-int limpiarRecursos(int sem_id, int shm_id, int buz_id);
-void manejadorSIGINT(int sig);
+int limpiar_recursos(int sem_id, int shm_id, int buz_id);
+void manejador_SIGINT(int sig);
+int llegada_primer_ajuste(HCoche hc);
+int llegada_siguiente_ajuste(HCoche hc);
+int llegada_mejor_ajuste(HCoche hc);
+int llegada_peor_ajuste(HCoche hc);
 
 int main(int argc, char *argv[])
 {
@@ -36,6 +40,16 @@ int main(int argc, char *argv[])
 	sa.sa_handler = manejadorSIGINT;
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = 0;
+
+    TIPO_FUNCION_LLEGADA algoritmos_llegada[4]; // Creamos el array de funciones de llegada usando el typedef que nos da el .h
+
+    /* Inicializo los elementos del array */
+    algoritmos_llegada[0] = llegada_primer_ajuste;
+    algoritmos_llegada[1] = llegada_siguiente_ajuste;
+    algoritmos_llegada[2] = llegada_mejor_ajuste;
+    algoritmos_llegada[3] = llegada_peor_ajuste;
+
+
 	if (sigaction(SIGINT, &sa, NULL) == -1) {
 	    perror("Error al registrar SIGINT");
 	    return 1;
@@ -43,9 +57,9 @@ int main(int argc, char *argv[])
 
 
 
-    /* Comprobacion argumentos */
+    /* ComprobaciOn argumentos */
     if (argc == 1){
-        puts("Llamada esperada: parking velocidad nchofers [D] [PA | PD]");
+        puts("Llamada esperada: parking velocidad nchofers [D] [PA | PD]"); // Usamos puts y no pon_error porque aUn no hemos inicializado la biblioteca aquI
         return 1;
     } else if (argc < 3 || argc > 5){
         fprintf(stderr, "NUmero invAlido de parAmetros.\n");
@@ -103,7 +117,7 @@ int main(int argc, char *argv[])
 	}
 
 
-    /* Ejecucion */
+    /* EjecuciOn */
     int debug=0;	// debug = D ???
 
     if (PARKING_inicio(velocidad, NULL, sem_id, buz_id, shm_id, debug) == -1){
@@ -132,7 +146,7 @@ int main(int argc, char *argv[])
 
 
 
-int limpiarRecursos(int sem_id, int shm_id, int buz_id){
+int limpiar_recursos(int sem_id, int shm_id, int buz_id){
     int cod_err=0;
 
     if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
@@ -151,7 +165,7 @@ int limpiarRecursos(int sem_id, int shm_id, int buz_id){
     return cod_err;
 }
 
-void manejadorSIGINT(int sig) {
+void manejador_SIGINT(int sig) {
     write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
     if (limpiarRecursos(sem_id, shm_id, buz_id)){
 		write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
@@ -159,5 +173,28 @@ void manejadorSIGINT(int sig) {
     } else
 		write(STDOUT_FILENO, "Recursos liberados correctamente.\n", 34);
 
-	_exit(1);	// Deja a los hijos huerfanos
+	_exit(1);	// Deja a los hijos huErfanos
+}
+
+int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primera acera
+    
+    pon_error("Coche entrando en la primera acera\n");
+    pause();
+    return -1; // La cola estA ocupada de momento
+
+}
+
+int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la segunda acera
+
+    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+}
+
+int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
+
+    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+}
+
+int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
+
+    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
 }
