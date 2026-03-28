@@ -28,7 +28,10 @@ int buz_id = -1;
 
 /* Prototipos */
 int limpiar_recursos(int sem_id, int shm_id, int buz_id);
+
 void manejador_SIGINT(int sig);
+void manejador_SIGALRM(int sig);
+
 int llegada_primer_ajuste(HCoche hc);
 int llegada_siguiente_ajuste(HCoche hc);
 int llegada_mejor_ajuste(HCoche hc);
@@ -36,9 +39,9 @@ int llegada_peor_ajuste(HCoche hc);
 
 int main(int argc, char *argv[])
 {
-
-	// TODO: SIGALARM
-    struct sigaction sa;
+	/* Registro de seNales */
+	// SIGINT
+	struct sigaction sa;
 	sa.sa_handler = manejador_SIGINT;
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = 0;
@@ -46,6 +49,14 @@ int main(int argc, char *argv[])
 	    perror("Error al registrar SIGINT");
 	    return 1;
 	}
+	// SIGALARM
+	sa.sa_handler = manejador_SIGALRM;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGALRM, &sa, NULL) == -1) {
+        perror("Error al registrar SIGALRM");
+        return 1;
+    }
 
     TIPO_FUNCION_LLEGADA algoritmos_llegada[4]; // Creamos el array de funciones de llegada usando el typedef que nos da el .h
 
@@ -54,10 +65,6 @@ int main(int argc, char *argv[])
     algoritmos_llegada[1] = llegada_siguiente_ajuste;
     algoritmos_llegada[2] = llegada_mejor_ajuste;
     algoritmos_llegada[3] = llegada_peor_ajuste;
-
-
-	
-
 
 
     /* ComprobaciOn argumentos */
@@ -81,7 +88,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Argumentos opcionales
+    /* Argumentos opcionales */
 	for (int i = 3; i < argc; i++) {
         if (strcmp(argv[i], "D") == 0){
             D = 1;
@@ -129,33 +136,42 @@ int main(int argc, char *argv[])
 		return 1;
     }
 
-    /* Fork para crear el hijo con el cronOmetro*/
-    pid_t pid = fork();
-    switch(pid){
-        case -1:
-            perror("Error en fork de creaciOn cronOmetro");
-            limpiar_recursos(sem_id, shm_id, buz_id);
-            break;
-        case 0:
-            // Es el hijo, activa el cronOmetro (SIGALRM) y duerme
-            // Registrar la manejadora de SIGALRM
-            // Activar el cronometro alarm(30);
-            // Se va a dormir, pause();
-            break;
-        default: 
-            // Es el padre, de momento lo ponemos en pause para ver que el cronOmetro va bien pero aquI va la llamda a PARKING_simulaciOn()
-            pause();
-            break;
-    }
     
-	// TODO: Crear procesos hijos (chOferes)
+	/* CreaciOn procesos hijos (chOferes, cronOmetro) */
+	pid_t pid[nchof+1]; // +1 para el cronOmetro
+
+	for (int i=0; i<nchof+1; i++){
+	    switch(pid[i]=fork()){
+	        case -1:
+	            perror("Error en fork de creaciOn cronOmetro");
+	            kill(getpid(), SIGINT);	// Envia la señal SIGINT y salta a la manejadora
+	            break;
+	        case 0:
+				// Hijos
+				if (i == 0){
+					printf("[CRONO] Iniciando cuenta atrás de 30 segundos...\n");
+                    alarm(30); // Programa la señal SIGALRM para dentro de 30s
+
+				} else{
+					// ChOferes
+					pause(); // TODO: Este pause solo está para que los choferes no molesten por ahora
+				}
+
+				break;
+	        default: 
+	            // Es el padre, de momento lo ponemos en pause para ver que el cronOmetro va bien pero aquI va la llamda a PARKING_simulaciOn()
+	            pause();
+				// TODO: Llamada a PARKING_simulaciOn()
+	            break;
+	    }
+	}
 
 
-	// TODO: Llamada a PARKING_simulaciOn()
 
 
 
-	sleep(30);	// TODO: Este sleep está para hacer pruebas habrá que quitarlo
+
+	// sleep(30);	// TODO: Este sleep está para hacer pruebas habrá que quitarlo
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -183,9 +199,14 @@ int limpiar_recursos(int sem_id, int shm_id, int buz_id){
         cod_err = 1;
     }
 
+	sem_id = -1;	
+	buz_id = -1;	
+	shm_id = -1;
+
     return cod_err;
 }
 
+/* Manejadoras */
 void manejador_SIGINT(int sig) {
     write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
     if (limpiar_recursos(sem_id, shm_id, buz_id)){
@@ -197,6 +218,14 @@ void manejador_SIGINT(int sig) {
 	_exit(1);	// Deja a los hijos huErfanos
 }
 
+void manejador_SIGALRM(int sig){
+    write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
+    
+	// TODO: Lo que sea que pase cuando el cronOmetro acabe
+    // kill(getpid(), SIGINT); 
+}
+
+/* Ajustes */
 int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primera acera
     
     pon_error("Coche entrando en la primera acera\n");
