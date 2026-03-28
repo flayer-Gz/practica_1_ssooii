@@ -19,6 +19,7 @@
 #include <sys/shm.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 // IPC IDs
 int sem_id = -1;
@@ -128,6 +129,25 @@ int main(int argc, char *argv[])
 		return 1;
     }
 
+    /* Fork para crear el hijo con el cronOmetro*/
+    pid_t pid = fork();
+    switch(pid){
+        case -1:
+            perror("Error en fork de creaciOn cronOmetro");
+            limpiar_recursos(sem_id, shm_id, buz_id);
+            break;
+        case 0:
+            // Es el hijo, activa el cronOmetro (SIGALRM) y duerme
+            // Registrar la manejadora de SIGALRM
+            // Activar el cronometro alarm(30);
+            // Se va a dormir, pause();
+            break;
+        default: 
+            // Es el padre, de momento lo ponemos en pause para ver que el cronOmetro va bien pero aquI va la llamda a PARKING_simulaciOn()
+            pause();
+            break;
+    }
+    
 	// TODO: Crear procesos hijos (chOferes)
 
 
@@ -136,7 +156,6 @@ int main(int argc, char *argv[])
 
 
 	sleep(30);	// TODO: Este sleep está para hacer pruebas habrá que quitarlo
-
 
 
     /* LiberaciOn de recursos y finalizaciOn */
