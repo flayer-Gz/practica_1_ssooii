@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
 
 
 
-int limpiar_recursos(int sem_id, int shm_id, int buz_id){	// TODO: Esto deberia de ser una ZEM
+int limpiar_recursos(int sem_id, int shm_id, int buz_id){
     int cod_err=0;
 
     if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
