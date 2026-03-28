@@ -168,15 +168,17 @@ int main(int argc, char *argv[])
 					chofer();
 				}
 
-				break;
+				break; // <-- Esto tiene que ser un exit(0) para no hacer una forkbomb
 	        default: 
-				// TODO: Llamada a PARKING_simulaciOn()
+				if (PARKING_simulaciOn() == -1){
+                    perror("Error al inicar la simulaciOn");
+                }
 	            break;
 	    }
 	}
 
 	// Solo el padre sale del for y llega aquI
-	pause();
+	pause(); 
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -243,7 +245,8 @@ void manejador_SIGINT(int sig) {
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
 	PARKING_fin(1);
-    kill(pid_padre, SIGINT); 
+    kill(pid_padre, SIGINT); /* Esto creo que va en contra del enunciado, con poner exit(0) el padre ya sale de la simulacion con calma sin cortar de golpe 
+    todos los hijos que no hayan desaparcado gracias a la funcion de PARKING_FIN */ 
 }
 
 /* Ajustes */
