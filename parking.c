@@ -3,28 +3,26 @@
  *
  * Victor LOpez SAnchez
  * Mario LOpez PErez
- */
+*/
 
- /* Macros */
+
+
+/* Macros */
 #define _POSIX_C_SOURCE 200809L // Para sigaction
-#define NUM_USER_SEM 1  // SemAforos para el usuario
-#define NUM_USER_SHM 4  // Bytes de memoria comp. para el usuario
+#define NUM_USER_SEM 1			// SemAforos para el usuario
+#define NUM_USER_SHM 32			// Bytes de memoria comp. para el usuario
 
 #include "parking.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/msg.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
-#include <signal.h>
-#include <unistd.h>
+#include <sys/wait.h>
 #include <sys/types.h>
-
-// IPC IDs
-int sem_id = -1;
-int shm_id = -1;
-int buz_id = -1;
 
 /* Prototipos */
 int limpiar_recursos(int sem_id, int shm_id, int buz_id);
@@ -37,8 +35,20 @@ int llegada_siguiente_ajuste(HCoche hc);
 int llegada_mejor_ajuste(HCoche hc);
 int llegada_peor_ajuste(HCoche hc);
 
+void chofer();
+
+/* Variables globales */
+int sem_id = -1;
+int shm_id = -1;
+int buz_id = -1;
+int nchof  = 0;
+pid_t *pid = NULL;	// Array de pids hijos
+pid_t pid_padre;
+
 int main(int argc, char *argv[])
 {
+	pid_padre = getpid();
+
 	/* Registro de seNales */
 	// SIGINT
 	struct sigaction sa;
@@ -77,7 +87,7 @@ int main(int argc, char *argv[])
     }
 
     /* Carga de los argumentos */
-    int velocidad, nchof, D = 0, PA = 0, PD = 0;
+    int velocidad, D = 0, PA = 0, PD = 0;
 
     if (sscanf(argv[1], "%d", &velocidad) != 1 || velocidad < 0){
         fprintf(stderr, "Error: El primer argumento (velocidad) debe ser un entero >= 0.\n");
@@ -119,7 +129,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-    /* CreaciOn de los buzones */
+    /* CreaciOn del buzon */
     if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
 		perror("Error al crear el buzon.");
 		kill(getpid(), SIGINT);
@@ -138,7 +148,7 @@ int main(int argc, char *argv[])
 
     
 	/* CreaciOn procesos hijos (chOferes, cronOmetro) */
-	pid_t pid[nchof+1]; // +1 para el cronOmetro
+	pid = malloc((nchof+1)*sizeof(pid_t));
 
 	for (int i=0; i<nchof+1; i++){
 	    switch(pid[i]=fork()){
@@ -149,29 +159,24 @@ int main(int argc, char *argv[])
 	        case 0:
 				// Hijos
 				if (i == 0){
-					printf("[CRONO] Iniciando cuenta atrás de 30 segundos...\n");
-                    alarm(30); // Programa la señal SIGALRM para dentro de 30s
+					write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
+                    alarm(30);	// Programa la señal SIGALRM para dentro de 30s
+					pause();	// Espera a SIGALRM
 
 				} else{
 					// ChOferes
-					pause(); // TODO: Este pause solo está para que los choferes no molesten por ahora
+					chofer();
 				}
 
 				break;
 	        default: 
-	            // Es el padre, de momento lo ponemos en pause para ver que el cronOmetro va bien pero aquI va la llamda a PARKING_simulaciOn()
-	            pause();
 				// TODO: Llamada a PARKING_simulaciOn()
 	            break;
 	    }
 	}
 
-
-
-
-
-
-	// sleep(30);	// TODO: Este sleep está para hacer pruebas habrá que quitarlo
+	// Solo el padre sale del for y llega aquI
+	pause();
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -183,7 +188,7 @@ int main(int argc, char *argv[])
 
 
 
-int limpiar_recursos(int sem_id, int shm_id, int buz_id){
+int limpiar_recursos(int sem_id, int shm_id, int buz_id){	// TODO: Esto deberia de ser una ZEM
     int cod_err=0;
 
     if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
@@ -208,21 +213,37 @@ int limpiar_recursos(int sem_id, int shm_id, int buz_id){
 
 /* Manejadoras */
 void manejador_SIGINT(int sig) {
-    write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
-    if (limpiar_recursos(sem_id, shm_id, buz_id)){
-		write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
-		return;
-    } else
-		write(STDOUT_FILENO, "Recursos liberados correctamente.\n", 34);
+	if (getpid() == pid_padre){
+		// Limpieza de recursos
+    	write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
+    	if (limpiar_recursos(sem_id, shm_id, buz_id)){
+			write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
+			return;
+    	} else
+			write(STDOUT_FILENO, "Recursos liberados correctamente.\n", 34);
 
-	_exit(1);	// Deja a los hijos huErfanos
+		// Limpieza de procesos
+		if (pid != NULL){
+            for (int i=0; i<nchof+1; i++){
+                if (pid[i] > 0)
+                    kill(pid[i], SIGTERM);
+            }
+            // Esperar a que terminen
+            for (int i=0; i<nchof+1; i++){
+                if (pid[i] > 0)
+                    waitpid(pid[i], NULL, 0);
+            }
+            free(pid);
+        }
+
+		_exit(0);
+	}
 }
 
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
-    
-	// TODO: Lo que sea que pase cuando el cronOmetro acabe
-    // kill(getpid(), SIGINT); 
+	PARKING_fin(1);
+    kill(pid_padre, SIGINT); 
 }
 
 /* Ajustes */
@@ -247,4 +268,10 @@ int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
 
     return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+}
+
+
+void chofer(){
+	pause();	// Para que no molesten mientras
+
 }
