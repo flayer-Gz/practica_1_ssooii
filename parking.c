@@ -36,10 +36,15 @@ int llegada_peor_ajuste(HCoche hc);
 int main(int argc, char *argv[])
 {
 
+	// TODO: SIGALARM
     struct sigaction sa;
-	sa.sa_handler = manejadorSIGINT;
+	sa.sa_handler = manejador_SIGINT;
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = 0;
+	if (sigaction(SIGINT, &sa, NULL) == -1) {
+	    perror("Error al registrar SIGINT");
+	    return 1;
+	}
 
     TIPO_FUNCION_LLEGADA algoritmos_llegada[4]; // Creamos el array de funciones de llegada usando el typedef que nos da el .h
 
@@ -50,10 +55,7 @@ int main(int argc, char *argv[])
     algoritmos_llegada[3] = llegada_peor_ajuste;
 
 
-	if (sigaction(SIGINT, &sa, NULL) == -1) {
-	    perror("Error al registrar SIGINT");
-	    return 1;
-	}
+	
 
 
 
@@ -120,7 +122,7 @@ int main(int argc, char *argv[])
     /* EjecuciOn */
     int debug=0;	// debug = D ???
 
-    if (PARKING_inicio(velocidad, NULL, sem_id, buz_id, shm_id, debug) == -1){
+    if (PARKING_inicio(velocidad, algoritmos_llegada, sem_id, buz_id, shm_id, debug) == -1){
         perror("Error al ejecutar PARKING_inicio.");
         kill(getpid(), SIGINT);
 		return 1;
@@ -133,7 +135,7 @@ int main(int argc, char *argv[])
 
 
 
-	sleep(30);
+	sleep(30);	// TODO: Este sleep está para hacer pruebas habrá que quitarlo
 
 
 
@@ -167,7 +169,7 @@ int limpiar_recursos(int sem_id, int shm_id, int buz_id){
 
 void manejador_SIGINT(int sig) {
     write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
-    if (limpiarRecursos(sem_id, shm_id, buz_id)){
+    if (limpiar_recursos(sem_id, shm_id, buz_id)){
 		write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
 		return;
     } else
