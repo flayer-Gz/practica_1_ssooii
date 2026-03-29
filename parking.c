@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
 	        case 0:
 				// Hijos
 				if (i == 0){
-					write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
+					// write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
                     alarm(30);	// Programa la señal SIGALRM para dentro de 30s
 					pause();	// Espera a SIGALRM
 
@@ -225,7 +225,6 @@ int main(int argc, char *argv[])
 		perror("Error al inicar la simulaciOn");
 		kill(getpid(), SIGINT);
 	}
-
 
     /* LiberaciOn de recursos y finalizaciOn */
 	kill(getpid(), SIGINT);
@@ -342,15 +341,6 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 void chofer(){
 	struct PARKING_mensajeBiblioteca msg;
 
-	/* Enganchar la memoria en el hijo
-     * CREO que hay que volver a engancharla aqui, despues de hacer el fork
-	*/
-	void *memoria_base = shmat(shm_id, NULL, 0);
-    int offset = PARKING_getTamaNoMemoriaCompartida();
-    if (offset % 4 != 0)
-		offset += (4 - (offset % 4));
-    DatosCompartidos *shm = (DatosCompartidos *)((char *)memoria_base + offset);
-
     while(42){
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
         if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){
@@ -371,17 +361,19 @@ void chofer(){
 // Se ejecuta cuando el coche ha terminado de aparcar físicamente
 void aparcar_commit(HCoche hc){
 	// TODO??
-    // printf("Coche %d: ¡Ya he aparcado!\n", PARKING_getNUmero(hc));
+    write(STDOUT_FILENO, "Coche: ¡Ya he aparcado!\n", 24);
 }
 
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
 	// TODO??
     // Aquí podrías meter lógica extra si quisieras frenar el coche
+	write(STDOUT_FILENO, "Permiso avance", 14);
 }
 
 // Se ejecuta justo después de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
 	// TODO??
     // Movimiento completado
+	write(STDOUT_FILENO, "Permiso avance commit", 21);
 }
