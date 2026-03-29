@@ -305,9 +305,19 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 
 void chofer(){
-	pause();	// Para que no molesten mientras
+	struct PARKING_mensajeBiblioteca msg;
 
-	// TODO: Logica de los chOferes
-	// Si quieres continua aqui
+    while(42){
+		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
+        if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){
+            perror("[CHOFER] Error al leer del buzón");
+            break;
+        }
 
+        if (msg.subtipo == PARKING_MSGSUB_APARCAR){
+            pon_error("[CHOFER] Coche solicita APARCAR\n");
+        } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
+            pon_error("[CHOFER] Coche solicita DESAPARCAR\n");
+        }
+    }
 }
