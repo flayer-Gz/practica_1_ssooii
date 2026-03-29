@@ -138,9 +138,7 @@ int main(int argc, char *argv[])
 
 
     /* EjecuciOn */
-    int debug=0;	// debug = D ???
-
-    if (PARKING_inicio(velocidad, algoritmos_llegada, sem_id, buz_id, shm_id, debug) == -1){
+    if (PARKING_inicio(velocidad, algoritmos_llegada, sem_id, buz_id, shm_id, D) == -1){
         perror("Error al ejecutar PARKING_inicio.");
         kill(getpid(), SIGINT);
 		return 1;
@@ -167,18 +165,18 @@ int main(int argc, char *argv[])
 					// ChOferes
 					chofer();
 				}
-
-				break; // <-- Esto tiene que ser un exit(0) para no hacer una forkbomb
-	        default: 
-				if (PARKING_simulaciOn() == -1){
-                    perror("Error al inicar la simulaciOn");
-                }
-	            break;
+				exit(0);
+			default: 
+			break;
 	    }
 	}
-
+	
 	// Solo el padre sale del for y llega aquI
-	pause(); 
+	if (PARKING_simulaciOn() == -1){
+		perror("Error al inicar la simulaciOn");
+		kill(getpid(), SIGINT);
+	}
+	pause();	// Pause para pruebas
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -237,7 +235,6 @@ void manejador_SIGINT(int sig) {
             }
             free(pid);
         }
-
 		_exit(0);
 	}
 }
@@ -245,8 +242,8 @@ void manejador_SIGINT(int sig) {
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
 	PARKING_fin(1);
-    kill(pid_padre, SIGINT); /* Esto creo que va en contra del enunciado, con poner exit(0) el padre ya sale de la simulacion con calma sin cortar de golpe 
-    todos los hijos que no hayan desaparcado gracias a la funcion de PARKING_FIN */ 
+	// TODO: Esperar a que los que estAn desaparcando desaparquen
+    kill(pid_padre, SIGINT);
 }
 
 /* Ajustes */
@@ -276,5 +273,8 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 void chofer(){
 	pause();	// Para que no molesten mientras
+
+	// TODO: Logica de los chOferes
+	// Si quieres continua aqui
 
 }
