@@ -225,6 +225,7 @@ int main(int argc, char *argv[])
 		perror("Error al inicar la simulaciOn");
 		kill(getpid(), SIGINT);
 	}
+	
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -363,12 +364,12 @@ void chofer(){
 
 // Se ejecuta cuando el coche ha terminado de aparcar físicamente
 void aparcar_commit(HCoche hc){
-	write(STDOUT_FILENO, "\n[APARCAR_COMMIT] Voy a aparcar!!\n", 34);
+	// write(STDOUT_FILENO, "\n[APARCAR_COMMIT] Voy a aparcar!!\n", 34);
 }
 
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
-	write(STDOUT_FILENO, "\n[PERMISO_AVANCE] Voy a aparcar!!\n", 34);
+	// write(STDOUT_FILENO, "\n[PERMISO_AVANCE] Voy a aparcar!!\n", 34);
 }
 
 // Se ejecuta justo después de que el coche se ha movido
