@@ -289,6 +289,7 @@ void manejador_SIGINT(int sig) {
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
 	PARKING_fin(1); // Avisamos de que toca salir de PARKING_simulaciOn
+    write(STDOUT_FILENO, "\nDESPUES DE PARKING_fin\n", 24);
     _exit(0);
 }
 
