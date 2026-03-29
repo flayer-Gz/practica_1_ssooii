@@ -289,9 +289,7 @@ void manejador_SIGINT(int sig) {
 }
 
 void manejador_SIGALRM(int sig){
-    //write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
 	PARKING_fin(1); // Avisamos de que toca salir de PARKING_simulaciOn
-    //write(STDOUT_FILENO, "\nDESPUES DE PARKING_fin\n", 24);
     _exit(0);
 }
 
@@ -353,26 +351,20 @@ void chofer(){
         }
 
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
-            //pon_error("[CHOFER] Coche solicita APARCAR\n");
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
-            //pon_error("[CHOFER] Coche solicita DESAPARCAR\n");
         }
     }
 }
 
 // Se ejecuta cuando el coche ha terminado de aparcar físicamente
 void aparcar_commit(HCoche hc){
-	// write(STDOUT_FILENO, "\n[APARCAR_COMMIT] Voy a aparcar!!\n", 34);
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
-	// write(STDOUT_FILENO, "\n[PERMISO_AVANCE] Voy a aparcar!!\n", 34);
 }
 
 // Se ejecuta justo después de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
-	// TODO??
-    // Movimiento completado
 }
