@@ -291,17 +291,8 @@ void manejador_SIGINT(int sig) {
 }
 
 void manejador_SIGALRM(int sig){
-    if (getpid() != pid_padre) {
-        // SOY EL HIJO CRONÓMETRO: Han pasado los 30 segundos
-        // Le meto un grito al padre para despertarlo de la simulación
-        kill(pid_padre, SIGALRM);
-        _exit(0); // Mi trabajo ha terminado, me desintegro
-    } else {
-        // SOY EL PADRE: Mi hijo me acaba de despertar
-        // Le digo a la biblioteca que cierre el grifo de coches nuevos
-        PARKING_fin(1);
-        kill(pid_padre, SIGINT); //<-- hemos tenido que añadir esto
-    }
+    PARKING_fin(1);
+    _exit(0);
 }
 
 /* Ajustes */
@@ -365,6 +356,7 @@ void chofer(){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
+            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
         }
     }
 }
