@@ -5,6 +5,9 @@
  * Mario LOpez PErez
 */
 
+// Victor si no pongo esto aqui me dan muchos errores despues los cambiamos pero por ahora dejalo aqui
+#define _POSIX_C_SOURCE 200809L // Para sigaction
+
 /* Includes */
 #include "parking.h"
 #include <stdio.h>
@@ -21,15 +24,15 @@
 
 /* Recursos compartidos*/
 typedef struct {
-    int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
-    // AquI turno chOferes
+	int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
+	int turno_aparcar;
 } DatosCompartidos;
 
 
 /* Macros */
-#define _POSIX_C_SOURCE 200809L // Para sigaction
 #define NUM_USER_SEM 1			// SemAforos para el usuario
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
+#define USER_SEM_1 PARKING_getNSemAforos()
 
 
 
@@ -45,6 +48,10 @@ int llegada_mejor_ajuste(HCoche hc);
 int llegada_peor_ajuste(HCoche hc);
 
 void chofer();
+
+void aparcar_commit(HCoche hc);
+void permiso_avance(HCoche hc);
+void permiso_avance_commit(HCoche hc);
 
 /* Variables globales */
 int sem_id = -1;
@@ -129,15 +136,18 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-    /* CreaciOn de los semAforos */
+    /* CreaciOn de recursos IPCs */
     if ((sem_id = semget(IPC_PRIVATE, PARKING_getNSemAforos() + NUM_USER_SEM, IPC_CREAT | 0600)) == -1){
 		perror("Error al crear los semAforos.");
 		return 1;
 	}
-
-    /* CreaciOn de la memoria compartida */
     if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + NUM_USER_SHM, IPC_CREAT | 0600)) == -1){
 		perror("Error al reservar la memoria compartida.");
+		kill(getpid(), SIGINT);
+		return 1;
+	}
+	if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
+		perror("Error al crear el buzon.");
 		kill(getpid(), SIGINT);
 		return 1;
 	}
@@ -149,10 +159,9 @@ int main(int argc, char *argv[])
         kill(getpid(), SIGINT);
         return 1;
     }
-
-    int offset = PARKING_getTamaNoMemoriaCompartida();
-
+	
     /* Offset para asegurar que Encina no da Bus Error */
+    int offset = PARKING_getTamaNoMemoriaCompartida();
     if (offset % 4 != 0) {
         offset = offset + (4 - (offset % 4));
     }
@@ -167,12 +176,15 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* CreaciOn del buzon */
-    if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
-		perror("Error al crear el buzon.");
+	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
+
+	// Inicializar el semAforo de usuario a 1 (como un Mutex)
+	if (semctl(sem_id, USER_SEM_1, SETVAL, 1) == -1) {
+	    perror("Error inicializando semAforo");
 		kill(getpid(), SIGINT);
-		return 1;
+        return 1;
 	}
+
 
 
     /* EjecuciOn */
@@ -333,6 +345,15 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 void chofer(){
 	struct PARKING_mensajeBiblioteca msg;
 
+	/* Enganchar la memoria en el hijo
+     * CREO que hay que volver a engancharla aqui, despues de hacer el fork
+	*/
+	void *memoria_base = shmat(shm_id, NULL, 0);
+    int offset = PARKING_getTamaNoMemoriaCompartida();
+    if (offset % 4 != 0)
+		offset += (4 - (offset % 4));
+    DatosCompartidos *shm = (DatosCompartidos *)((char *)memoria_base + offset);
+
     while(42){
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
         if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){
@@ -342,8 +363,28 @@ void chofer(){
 
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
             pon_error("[CHOFER] Coche solicita APARCAR\n");
+			// TODO: PARKING_aparcar(msg.hCoche,);	esta mierda necesita muchas cosas
+
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
             pon_error("[CHOFER] Coche solicita DESAPARCAR\n");
         }
     }
+}
+
+// Se ejecuta cuando el coche ha terminado de aparcar físicamente
+void aparcar_commit(HCoche hc){
+	// TODO??
+    // printf("Coche %d: ¡Ya he aparcado!\n", PARKING_getNUmero(hc));
+}
+
+// Se ejecuta para pedir permiso antes de realizar un movimiento
+void permiso_avance(HCoche hc){
+	// TODO??
+    // Aquí podrías meter lógica extra si quisieras frenar el coche
+}
+
+// Se ejecuta justo después de que el coche se ha movido
+void permiso_avance_commit(HCoche hc){
+	// TODO??
+    // Movimiento completado
 }
