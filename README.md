@@ -37,4 +37,13 @@ Proceso padre con hijos (chóferes)
 
 El proceso padre es el encargado de la simulacion, este tiene un buzon al que envia un mensaje de tipo 100 cada vez que pasa algo en la simulacion (aparcar, desaparcar).
 
+Condiciones algoritmos llegada:
+-el algoritmo aparca en el primer sitio que encuentra que cabe. (lo que está en rojo marcado es que el coche ha reservado ese sitio)
+
+-tiene que colocarse a partir del ultimo que aparcó (no tiene porqué coincidir con el ultimo de la fila)
+
+-busca el primer sitio en el que cabe mejor de todos, más justo entra el coche (mejor ajuste)
+
+-busca el primer sitio en el que cabe de sobra, más espacio sobra (peor ajuste)
+
 

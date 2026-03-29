@@ -5,12 +5,16 @@
  * Mario LOpez PErez
 */
 
-
+/* Recursos compartidos*/
+typedef struct {
+    int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
+    // AquI lo chOferes
+} DatosCompartidos;
 
 /* Macros */
 #define _POSIX_C_SOURCE 200809L // Para sigaction
 #define NUM_USER_SEM 1			// SemAforos para el usuario
-#define NUM_USER_SHM 32			// Bytes de memoria comp. para el usuario
+#define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
 
 #include "parking.h"
 #include <stdio.h>
@@ -44,6 +48,10 @@ int buz_id = -1;
 int nchof  = 0;
 pid_t *pid = NULL;	// Array de pids hijos
 pid_t pid_padre;
+
+
+
+DatosCompartidos *memoria_compartida = NULL; // Puntero a todos los datos de la memoria compartida
 
 int main(int argc, char *argv[])
 {
@@ -128,6 +136,31 @@ int main(int argc, char *argv[])
 		kill(getpid(), SIGINT);
 		return 1;
 	}
+
+    /* Uso de shmat para enganchar*/
+    void *memoria_base = shmat(shm_id, NULL, 0); // Puntero genErico
+    if (memoria_base == (void *)-1) { // Cast para que no de error la comparaciOn
+        perror("Error al enganchar la memoria compartida (shmat)");
+        kill(getpid(), SIGINT);
+        return 1;
+    }
+
+    int offset = PARKING_getTamaNoMemoriaCompartida();
+
+    /* Offset para asegurar que Encina no da Bus Error */
+    if (offset % 4 != 0) {
+        offset = offset + (4 - (offset % 4));
+    }
+
+    /* Ajustamos la posiciOn dOnde comienza nuestra memoria compartida */
+    memoria_compartida = (DatosCompartidos *)((char *)memoria_base + offset);
+
+    /* Inicializamos las 4 aceras a 0 (libre) */
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 80; j++) {
+            memoria_compartida->aceras[i][j] = 0;
+        }
+    }
 
     /* CreaciOn del buzon */
     if ((buz_id = msgget(IPC_PRIVATE, IPC_CREAT | 0600)) == -1){	// Preguntar que permisos usar, 0060?
