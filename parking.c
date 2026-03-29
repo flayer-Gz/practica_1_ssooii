@@ -5,20 +5,7 @@
  * Mario LOpez PErez
 */
 
-
-#define _POSIX_C_SOURCE 200809L // Para sigaction
-
-/* Recursos compartidos*/
-typedef struct {
-    int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
-    // AquI lo chOferes
-} DatosCompartidos;
-
-/* Macros */
-
-#define NUM_USER_SEM 1			// SemAforos para el usuario
-#define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
-
+/* Includes */
 #include "parking.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +17,21 @@ typedef struct {
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+
+
+/* Recursos compartidos*/
+typedef struct {
+    int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
+    // AquI turno chOferes
+} DatosCompartidos;
+
+
+/* Macros */
+#define _POSIX_C_SOURCE 200809L // Para sigaction
+#define NUM_USER_SEM 1			// SemAforos para el usuario
+#define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
+
+
 
 /* Prototipos */
 int limpiar_recursos(int sem_id, int shm_id, int buz_id);
@@ -284,10 +286,31 @@ void manejador_SIGALRM(int sig){
 
 /* Ajustes */
 int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primera acera
-    
-    pon_error("Coche entrando en la primera acera\n");
-    pause();
-    return -1; // La cola estA ocupada de momento
+    int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
+    int huecos_consecutivos = 0; // Variable auxiliar para contar los huecos seguidos que encontramos en la zona de aparcamiento
+
+    for(int i = 0; i<80; i++){
+        if(memoria_compartida->aceras[0][i] == 0){ // Si el hueco estA vacIo, incremento el contador
+            
+            huecos_consecutivos++;
+            // Si el hueco es suficientemente grande como para que quepa el coche, devuelvo esa posiciOn para que el chOfer sepa dOnde aparcar
+            if(tamano_coche == huecos_consecutivos){
+                int posiciOn_aparcamiento = i - huecos_consecutivos + 1; // Devolvemos la primera posiciOn del hueco libre del aparcamiento
+
+                // Bucle para reservar esa posiciOn antes de que nos la quite otro coche
+                for(int j = posiciOn_aparcamiento; j<=i; j++){ 
+                    memoria_compartida->aceras[0][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+                }
+                return posiciOn_aparcamiento;
+        }
+        }else{
+            // Si el hueco no estA vacIo (tendrA un 1), reinicio el contador de huecos
+            huecos_consecutivos = 0;
+        }
+    }
+
+    // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
+    return -1; // Todos los sitios ocupados/no suficientemente grandes
 
 }
 
