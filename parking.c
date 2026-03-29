@@ -5,7 +5,6 @@
  * Mario LOpez PErez
 */
 
-// Victor si no pongo esto aqui me dan muchos errores despues los cambiamos pero por ahora dejalo aqui
 #define _POSIX_C_SOURCE 200809L // Para sigaction
 
 /* Includes */
@@ -226,7 +225,6 @@ int main(int argc, char *argv[])
 		perror("Error al inicar la simulaciOn");
 		kill(getpid(), SIGINT);
 	}
-	pause();	// Pause para pruebas
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -291,9 +289,8 @@ void manejador_SIGINT(int sig) {
 
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
-	PARKING_fin(1);
-	// TODO: Esperar a que los que estAn desaparcando desaparquen
-    kill(pid_padre, SIGINT);
+	PARKING_fin(1); // Avisamos de que toca salir de PARKING_simulaciOn
+    _exit(0);
 }
 
 /* Ajustes */
@@ -363,7 +360,7 @@ void chofer(){
 
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
             pon_error("[CHOFER] Coche solicita APARCAR\n");
-			// TODO: PARKING_aparcar(msg.hCoche,);	esta mierda necesita muchas cosas
+			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
             pon_error("[CHOFER] Coche solicita DESAPARCAR\n");
