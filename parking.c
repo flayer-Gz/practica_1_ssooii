@@ -290,6 +290,7 @@ void manejador_SIGINT(int sig) {
 void manejador_SIGALRM(int sig){
     write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
 	PARKING_fin(1); // Avisamos de que toca salir de PARKING_simulaciOn
+    write(STDOUT_FILENO, "\nDESPUES DE PARKING_fin\n", 24);
     _exit(0);
 }
 
@@ -342,14 +343,6 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 void chofer(){
 	struct PARKING_mensajeBiblioteca msg;
 
-	/* Enganchar la memoria en el hijo
-     * CREO que hay que volver a engancharla aqui, despues de hacer el fork
-	*/
-	void *memoria_base = shmat(shm_id, NULL, 0);
-    int offset = PARKING_getTamaNoMemoriaCompartida();
-    if (offset % 4 != 0)
-		offset += (4 - (offset % 4));
-    DatosCompartidos *shm = (DatosCompartidos *)((char *)memoria_base + offset);
 
     while(42){
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
