@@ -208,8 +208,9 @@ int main(int argc, char *argv[])
 				if (i == 0){
 					write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
                     alarm(30);	// Programa la señal SIGALRM para dentro de 30s
+                    write(STDOUT_FILENO, "\nAlarma activada\n", 17);
 					pause();	// Espera a SIGALRM
-
+                    write(STDOUT_FILENO, "\nSi escribe esto no sabemos nada de C\n", 38);
 				} else{
 					// ChOferes
 					chofer();
@@ -219,13 +220,14 @@ int main(int argc, char *argv[])
 			break;
 	    }
 	}
-	
+	write(STDOUT_FILENO, "\nSoy el padre y acabo de salir del for\n", 39);
 	// Solo el padre sale del for y llega aquI
 	if (PARKING_simulaciOn() == -1){
 		perror("Error al inicar la simulaciOn");
 		kill(getpid(), SIGINT);
 	}
-	
+    
+    write(STDOUT_FILENO, "\nSoy el padre y ya termino la simulacion\n", 41);
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -289,10 +291,17 @@ void manejador_SIGINT(int sig) {
 }
 
 void manejador_SIGALRM(int sig){
-    //write(STDOUT_FILENO, "\n[CRONÓMETRO] Tiempo agotado. Finalizando simulación...\n", 56);
-	PARKING_fin(1); // Avisamos de que toca salir de PARKING_simulaciOn
-    //write(STDOUT_FILENO, "\nDESPUES DE PARKING_fin\n", 24);
-    _exit(0);
+    if (getpid() != pid_padre) {
+        // SOY EL HIJO CRONÓMETRO: Han pasado los 30 segundos
+        // Le meto un grito al padre para despertarlo de la simulación
+        kill(pid_padre, SIGALRM);
+        _exit(0); // Mi trabajo ha terminado, me desintegro
+    } else {
+        // SOY EL PADRE: Mi hijo me acaba de despertar
+        // Le digo a la biblioteca que cierre el grifo de coches nuevos
+        PARKING_fin(1);
+        kill(pid_padre, SIGINT); //<-- hemos tenido que añadir esto
+    }
 }
 
 /* Ajustes */
