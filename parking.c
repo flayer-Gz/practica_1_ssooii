@@ -5,6 +5,9 @@
  * Mario LOpez PErez
 */
 
+
+#define _POSIX_C_SOURCE 200809L // Para sigaction
+
 /* Recursos compartidos*/
 typedef struct {
     int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
@@ -12,7 +15,7 @@ typedef struct {
 } DatosCompartidos;
 
 /* Macros */
-#define _POSIX_C_SOURCE 200809L // Para sigaction
+
 #define NUM_USER_SEM 1			// SemAforos para el usuario
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
 
