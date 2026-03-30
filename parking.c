@@ -20,6 +20,11 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
+union semun {
+    int val;                /* Valor para SETVAL */
+    struct semid_ds *buf;   /* Buffer para IPC_STAT, IPC_SET */
+    unsigned short *array;  /* Arreglo para GETALL, SETALL */
+};
 
 /* Recursos compartidos*/
 typedef struct {
@@ -177,9 +182,10 @@ int main(int argc, char *argv[])
     }
 
 	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
-
 	// Inicializar el semAforo de usuario a 1 (como un Mutex)
-	if (semctl(sem_id, USER_SEM_1, SETVAL, 1) == -1) {
+	union semun arg;
+	arg.val=1;
+	if (semctl(sem_id, USER_SEM_1, SETVAL, arg) == -1) {
 	    perror("Error inicializando semAforo");
 		kill(getpid(), SIGINT);
         return 1;
