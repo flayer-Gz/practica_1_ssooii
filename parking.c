@@ -51,6 +51,7 @@ void chofer();
 void aparcar_commit(HCoche hc);
 void permiso_avance(HCoche hc);
 void permiso_avance_commit(HCoche hc);
+void permiso_avance_commit_desaparcar(HCoche hc);
 
 /* Variables globales */
 int sem_id = -1;
@@ -356,7 +357,7 @@ void chofer(){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
-            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
+            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit_desaparcar);
         }
     }
 }
@@ -370,4 +371,21 @@ void permiso_avance(HCoche hc){
 
 // Se ejecuta justo después de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
+}
+
+// FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
+void permiso_avance_commit_desaparcar(HCoche hc){
+    if(PARKING_getY(hc) == 2){ //si el coche que estA desaparcando estA en la acera
+        int inicio = PARKING_getPosiciOnEnAcera(hc);
+        int tam = PARKING_getLongitud(hc);
+
+        if (memoria_compartida->aceras[0][inicio] == 1) { // Comprobamos que esa zona sigue a 1
+            // Ponemos a 0 (libre) los huecos exactos que ocupaba el coche
+            for (int j = inicio; j < inicio + tam; j++) {
+                memoria_compartida->aceras[0][j] = 0; 
+            }
+
+            // TODO: AquI pondremos un semAforo con SIGNAL para avisar a los coches que hay sitio nuevo
+        }
+    }
 }
