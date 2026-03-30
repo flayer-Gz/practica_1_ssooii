@@ -56,7 +56,9 @@ void chofer();
 void aparcar_commit(HCoche hc);
 void permiso_avance(HCoche hc);
 void permiso_avance_commit(HCoche hc);
-void permiso_avance_commit_desaparcar(HCoche hc);
+
+void wait_sem(int num_semAforo)
+void signal_sem(int num_semAforo)
 
 /* Variables globales */
 int sem_id = -1;
@@ -363,7 +365,7 @@ void chofer(){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
-            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit_desaparcar);
+            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
         }
     }
 }
@@ -373,6 +375,8 @@ void aparcar_commit(HCoche hc){
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
+    // Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
+
 }
 
 // Se ejecuta justo después de que el coche se ha movido
@@ -380,7 +384,7 @@ void permiso_avance_commit(HCoche hc){
 }
 
 // FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
-void permiso_avance_commit_desaparcar(HCoche hc){
+/*void permiso_avance_commit_desaparcar(HCoche hc){
     if(PARKING_getY(hc) == 2){ //si el coche que estA desaparcando estA en la acera
         int inicio = PARKING_getPosiciOnEnAcera(hc);
         int tam = PARKING_getLongitud(hc);
@@ -393,5 +397,27 @@ void permiso_avance_commit_desaparcar(HCoche hc){
 
             // TODO: AquI pondremos un semAforo con SIGNAL para avisar a los coches que hay sitio nuevo
         }
+    }
+}*/
+
+// FunciOn para hacer un WAIT
+void wait_sem(int num_semAforo) {
+    struct sembuf sops[1]; // Actuamos solo sobre 1 semAforo
+    sops[0].sem_num = num_semAforo; 
+    sops[0].sem_op  = -1;           
+    sops[0].sem_flg = 0;           
+    if (semop(sem_id, sops, 1) == -1) {
+        perror("Error al realizar wait_sem");
+    }
+}
+
+// FunciON para hacer un SIGNAL
+void signal_sem(int num_semAforo) {
+    struct sembuf sops[1]; // Actuamos solo sobre 1 semAforo
+    sops[0].sem_num = num_semAforo; 
+    sops[0].sem_op  = 1;            
+    sops[0].sem_flg = 0;
+    if (semop(sem_id, sops, 1) == -1) {
+        perror("Error al realizar signal_sem");
     }
 }
