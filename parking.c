@@ -28,14 +28,15 @@ union semun {
 
 /* Recursos compartidos*/
 typedef struct {
-	int aceras[4][3][80]; // Las 4 aceras, cada una con sus 3 carriles y 80 espacios (0=libre, 1=ocupado)
+	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
+	int pos_chof[4][80];	// Posicion de los choferes en la carretera
 	int turno_aparcar;
 } DatosCompartidos;
 
 
 /* Macros */
-#define NUM_USER_SEM 1			// SemAforos para el usuario
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
+#define NUM_USER_SEM 1			// SemAforos para el usuario
 #define USER_SEM_1 PARKING_getNSemAforos()
 
 
@@ -178,10 +179,8 @@ int main(int argc, char *argv[])
 
     /* Inicializamos las 4 aceras a 0 (libre) */
     for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 3; j++) {
-			for (int k=0; k < 80; k++){
-        	    memoria_compartida->aceras[i][j][k] = 0;
-			}
+        for (int j = 0; j < 80; j++) {
+    	    memoria_compartida->aceras[i][j] = 0;
         }
     }
 
@@ -217,11 +216,11 @@ int main(int argc, char *argv[])
 	        case 0:
 				// Hijos
 				if (i == 0){
-					write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
+					// write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
                     alarm(30);	// Programa la señal SIGALRM para dentro de 30s
-                    write(STDOUT_FILENO, "\nAlarma activada\n", 17);
+                    // write(STDOUT_FILENO, "\nAlarma activada\n", 17);
 					pause();	// Espera a SIGALRM
-                    write(STDOUT_FILENO, "\nSi escribe esto no sabemos nada de C\n", 38);
+                    // write(STDOUT_FILENO, "\nSi escribe esto no sabemos nada de C\n", 38);
 				} else{
 					// ChOferes
 					chofer();
@@ -231,14 +230,11 @@ int main(int argc, char *argv[])
 			break;
 	    }
 	}
-	write(STDOUT_FILENO, "\nSoy el padre y acabo de salir del for\n", 39);
 	// Solo el padre sale del for y llega aquI
 	if (PARKING_simulaciOn() == -1){
 		perror("Error al inicar la simulaciOn");
 		kill(getpid(), SIGINT);
 	}
-    
-    write(STDOUT_FILENO, "\nSoy el padre y ya termino la simulacion\n", 41);
 
 
     /* LiberaciOn de recursos y finalizaciOn */
@@ -312,7 +308,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
     int huecos_consecutivos = 0; // Variable auxiliar para contar los huecos seguidos que encontramos en la zona de aparcamiento
 
     for(int i = 0; i<80; i++){
-        if(memoria_compartida->aceras[0][0][i] == 0){ // Si el hueco estA vacIo, incremento el contador
+        if(memoria_compartida->aceras[0][i] == 0){ // Si el hueco estA vacIo, incremento el contador
             
             huecos_consecutivos++;
             // Si el hueco es suficientemente grande como para que quepa el coche, devuelvo esa posiciOn para que el chOfer sepa dOnde aparcar
@@ -321,7 +317,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
 
                 // Bucle para reservar esa posiciOn antes de que nos la quite otro coche
                 for(int j = posiciOn_aparcamiento; j<=i; j++){ 
-                    memoria_compartida->aceras[0][0][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+                    memoria_compartida->aceras[0][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
                 }
                 return posiciOn_aparcamiento;
         }
