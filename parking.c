@@ -402,12 +402,12 @@ void permiso_avance(HCoche hc){
 		/* Avance horizontal */
 		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
 		for (int i=0; i<nchof; i++){
-			if (PARKING_getX2(hc) == chof[i].x-chof[i].longitud){	// chof[i].x-chof[i].longitud nos da la posicion en la que acaba el coche
-				// La posicion a la que se equiere avanzar estA ocupada :(
+			if (PARKING_getX2(hc) == chof[i].x+chof[i].longitud){	// chof[i].x+chof[i].longitud nos da la posiciOn en la que acaba el coche
+				// La posiciOn a la que se equiere avanzar estA ocupada :(
 				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
 					if (getpid() == chof[j].pid){
 						chof[j].esperando=1;
-						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semaforo del chofer que bloquea el camino
+						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semAforo del chOfer que bloquea el camino
 						chof[j].esperando=0;
 						break;
 					}
@@ -423,14 +423,14 @@ void permiso_avance(HCoche hc){
 
 }
 
-// Se ejecuta justo después de que el coche se ha movido
+// Se ejecuta justo despuEs de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
-	for (int i=0; i<nchof; i++){	// Busqueda del chofer que avanzO
+	for (int i=0; i<nchof; i++){	// BUsqueda del chOfer que avanzO
 		if (getpid() == chof[i].pid){
-			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algun chOfer esetaba esperando el avance
-				if ((chof[j].x == (chof[i].x-chof[i].longitud-1)) && chof[j].esperando == 1){	// -1 porque era la posicion antes de que hubiese avanzado
-					// TODO: Liberar en el array la posicion
-					signal_sem(PARKING_getNSemAforos()+i);	// En caso que este esperando por esa posicion se hace un signal sobre el semaforo del que avanza
+			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algUn chOfer estaba esperando el avance
+				if ((chof[j].x == (chof[i].x+chof[i].longitud+2)) && chof[j].esperando == 1){	// +2 porque era la posicion antes de que hubiese avanzado
+					// TODO: Liberar en el array la posiciOn
+					signal_sem(PARKING_getNSemAforos()+i);	// En caso que estE esperando por esa posiciOn se hace un signal sobre el semAforo del que avanza
 				}
 			}
 		}
