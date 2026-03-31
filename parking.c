@@ -28,7 +28,7 @@ union semun {
 
 /* Recursos compartidos*/
 typedef struct {
-	int aceras[4][80]; // Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
+	int aceras[4][3][80]; // Las 4 aceras, cada una con sus 3 carriles y 80 espacios (0=libre, 1=ocupado)
 	int turno_aparcar;
 } DatosCompartidos;
 
@@ -57,8 +57,8 @@ void aparcar_commit(HCoche hc);
 void permiso_avance(HCoche hc);
 void permiso_avance_commit(HCoche hc);
 
-void wait_sem(int num_semAforo)
-void signal_sem(int num_semAforo)
+void wait_sem(int num_semAforo);
+void signal_sem(int num_semAforo);
 
 /* Variables globales */
 int sem_id = -1;
@@ -178,8 +178,10 @@ int main(int argc, char *argv[])
 
     /* Inicializamos las 4 aceras a 0 (libre) */
     for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 80; j++) {
-            memoria_compartida->aceras[i][j] = 0;
+        for (int j = 0; j < 3; j++) {
+			for (int k=0; k < 80; k++){
+        	    memoria_compartida->aceras[i][j][k] = 0;
+			}
         }
     }
 
@@ -310,7 +312,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
     int huecos_consecutivos = 0; // Variable auxiliar para contar los huecos seguidos que encontramos en la zona de aparcamiento
 
     for(int i = 0; i<80; i++){
-        if(memoria_compartida->aceras[0][i] == 0){ // Si el hueco estA vacIo, incremento el contador
+        if(memoria_compartida->aceras[0][0][i] == 0){ // Si el hueco estA vacIo, incremento el contador
             
             huecos_consecutivos++;
             // Si el hueco es suficientemente grande como para que quepa el coche, devuelvo esa posiciOn para que el chOfer sepa dOnde aparcar
@@ -319,7 +321,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
 
                 // Bucle para reservar esa posiciOn antes de que nos la quite otro coche
                 for(int j = posiciOn_aparcamiento; j<=i; j++){ 
-                    memoria_compartida->aceras[0][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+                    memoria_compartida->aceras[0][0][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
                 }
                 return posiciOn_aparcamiento;
         }
