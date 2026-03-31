@@ -26,10 +26,16 @@ union semun {
     unsigned short *array;  /* Arreglo para GETALL, SETALL */
 };
 
+typedef struct {
+    int activo;
+    int x, y;
+    int longitud;
+    int esperando_a; // -1 si no espera a nadie, o el ID del chofer que le bloquea
+} InfoChofer;
+
 /* Recursos compartidos*/
 typedef struct {
 	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
-	int pos_chof[4][80];	// Posicion de los choferes en la carretera
 	int turno_aparcar;
 } DatosCompartidos;
 
@@ -68,6 +74,7 @@ int buz_id = -1;
 int nchof  = 0;
 pid_t *pid = NULL;	// Array de pids hijos
 pid_t pid_padre;
+InfoChofer *pos_chof = NULL; // Puntero al array dinámico en memoria compartida
 
 
 
@@ -144,12 +151,23 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+    // CAlculo del tamaNo total: Estructura + array de chOferes
+    size_t tamano_total = sizeof(DatosCompartidos) + (nchof * sizeof(InfoChofer));
+    int total_semAforos = PARKING_getNSemAforos() + NUM_USER_SEM + nchof;
     /* CreaciOn de recursos IPCs */
-    if ((sem_id = semget(IPC_PRIVATE, PARKING_getNSemAforos() + NUM_USER_SEM, IPC_CREAT | 0600)) == -1){
+    if ((sem_id = semget(IPC_PRIVATE, total_semAforos, IPC_CREAT | 0600)) == -1){
 		perror("Error al crear los semAforos.");
 		return 1;
 	}
-    if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + NUM_USER_SHM, IPC_CREAT | 0600)) == -1){
+
+    // Inicializamos todos los semAforos de los chOferes a 0
+    union semun arg;
+    arg.val = 0;
+    for (int i = 0; i < nchof; i++) {
+        semctl(sem_id, USER_SEM_1 + 1 + i, SETVAL, arg); 
+    }
+
+    if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + tamano_total, IPC_CREAT | 0600)) == -1){ // QuizAs hay que poner el offset aqui
 		perror("Error al reservar la memoria compartida.");
 		kill(getpid(), SIGINT);
 		return 1;
@@ -177,6 +195,9 @@ int main(int argc, char *argv[])
     /* Ajustamos la posiciOn dOnde comienza nuestra memoria compartida */
     memoria_compartida = (DatosCompartidos *)((char *)memoria_base + offset);
 
+    // El array de la posiciOn de los chOferes empieza justo donde acaba la estructura
+    pos_chof = (InfoChofer *)(memoria_compartida + 1);
+
     /* Inicializamos las 4 aceras a 0 (libre) */
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 80; j++) {
@@ -186,7 +207,6 @@ int main(int argc, char *argv[])
 
 	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
 	// Inicializar el semAforo de usuario a 1 (como un Mutex)
-	union semun arg;
 	arg.val=1;
 	if (semctl(sem_id, USER_SEM_1, SETVAL, arg) == -1) {
 	    perror("Error inicializando semAforo");
