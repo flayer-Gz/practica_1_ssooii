@@ -422,10 +422,7 @@ void permiso_avance(HCoche hc){
 		/* Avance vertical */
 		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
 		for (int i=0; i<nchof; i++){
-			/*		        <-------------->
-					<---------------->
-			
-			*/
+
 			if (PARKING_getX(hc)+chof[i].longitud >= chof[i].x && PARKING_getX(hc)+PARKING_getLongitud(hc) <= chof[i].x){
 				// Hay un coche bloqueando el avance vertical
 				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
@@ -445,6 +442,9 @@ void permiso_avance(HCoche hc){
 
 // Se ejecuta justo despuEs de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
+
+	
+
 	for (int i=0; i<nchof; i++){	// BUsqueda del chOfer que avanzO
 		if (getpid() == chof[i].pid){
 			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algUn chOfer estaba esperando el avance
@@ -455,6 +455,9 @@ void permiso_avance_commit(HCoche hc){
 			}
 		}
 	}
+
+
+
 }
 
 // FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
