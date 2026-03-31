@@ -27,10 +27,10 @@ union semun {
 };
 
 typedef struct {
-    int activo;
+	pid_t pid;
     int x, y;
     int longitud;
-    int esperando_a; // -1 si no espera a nadie, o el ID del chofer que le bloquea
+    int esperando; // -1 si no espera a nadie, o el ID del chofer que le bloquea
 } InfoChofer;
 
 /* Recursos compartidos*/
@@ -42,8 +42,8 @@ typedef struct {
 
 /* Macros */
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
-#define NUM_USER_SEM 1			// SemAforos para el usuario
-#define USER_SEM_1 PARKING_getNSemAforos()
+#define NUM_USER_SEM 1									// SemAforos para el usuario
+#define USER_SEM_1 PARKING_getNSemAforos()+nchof		// Despues de los semaforos de la biblioteca y los choferes
 
 
 
@@ -58,7 +58,7 @@ int llegada_siguiente_ajuste(HCoche hc);
 int llegada_mejor_ajuste(HCoche hc);
 int llegada_peor_ajuste(HCoche hc);
 
-void chofer();
+void chofer(int n);
 
 void aparcar_commit(HCoche hc);
 void permiso_avance(HCoche hc);
@@ -72,9 +72,9 @@ int sem_id = -1;
 int shm_id = -1;
 int buz_id = -1;
 int nchof  = 0;
-pid_t *pid = NULL;	// Array de pids hijos
 pid_t pid_padre;
-InfoChofer *pos_chof = NULL; // Puntero al array dinámico en memoria compartida
+pid_t *pid = NULL;	// Array de pids hijos
+InfoChofer *chof = NULL; // Puntero al array dinámico en memoria compartida
 
 
 
@@ -153,20 +153,12 @@ int main(int argc, char *argv[])
 
     // CAlculo del tamaNo total: Estructura + array de chOferes
     size_t tamano_total = sizeof(DatosCompartidos) + (nchof * sizeof(InfoChofer));
-    int total_semAforos = PARKING_getNSemAforos() + NUM_USER_SEM + nchof;
+
     /* CreaciOn de recursos IPCs */
-    if ((sem_id = semget(IPC_PRIVATE, total_semAforos, IPC_CREAT | 0600)) == -1){
+    if ((sem_id = semget(IPC_PRIVATE, PARKING_getNSemAforos() + NUM_USER_SEM + nchof, IPC_CREAT | 0600)) == -1){
 		perror("Error al crear los semAforos.");
 		return 1;
 	}
-
-    // Inicializamos todos los semAforos de los chOferes a 0
-    union semun arg;
-    arg.val = 0;
-    for (int i = 0; i < nchof; i++) {
-        semctl(sem_id, USER_SEM_1 + 1 + i, SETVAL, arg); 
-    }
-
     if ((shm_id = shmget(IPC_PRIVATE, PARKING_getTamaNoMemoriaCompartida() + tamano_total, IPC_CREAT | 0600)) == -1){ // QuizAs hay que poner el offset aqui
 		perror("Error al reservar la memoria compartida.");
 		kill(getpid(), SIGINT);
@@ -194,9 +186,10 @@ int main(int argc, char *argv[])
 
     /* Ajustamos la posiciOn dOnde comienza nuestra memoria compartida */
     memoria_compartida = (DatosCompartidos *)((char *)memoria_base + offset);
+	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
 
     // El array de la posiciOn de los chOferes empieza justo donde acaba la estructura
-    pos_chof = (InfoChofer *)(memoria_compartida + 1);
+    chof = (InfoChofer *)(memoria_compartida + 1);
 
     /* Inicializamos las 4 aceras a 0 (libre) */
     for (int i = 0; i < 4; i++) {
@@ -205,7 +198,13 @@ int main(int argc, char *argv[])
         }
     }
 
-	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
+	// Inicializamos todos los semAforos de los chOferes a 0
+    union semun arg;
+    arg.val = 0;
+    for (int i = 0; i < nchof; i++) {
+        semctl(sem_id, USER_SEM_1 + 1 + i, SETVAL, arg); 
+    }
+
 	// Inicializar el semAforo de usuario a 1 (como un Mutex)
 	arg.val=1;
 	if (semctl(sem_id, USER_SEM_1, SETVAL, arg) == -1) {
@@ -243,7 +242,7 @@ int main(int argc, char *argv[])
                     // write(STDOUT_FILENO, "\nSi escribe esto no sabemos nada de C\n", 38);
 				} else{
 					// ChOferes
-					chofer();
+					chofer(i-1);	// -1 para que estEn numerados desde el 0
 				}
 				exit(0);
 			default: 
@@ -368,17 +367,22 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 }
 
 
-void chofer(){
+void chofer(int n){
 	struct PARKING_mensajeBiblioteca msg;
+	
+	chof[n].pid = getpid();
 
-
-    while(42){
+    while(42){	// TODO: Cambiar por espera sin consumo de CPU
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
         if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){
-            perror("[CHOFER] Error al leer del buzón");
+			perror("[CHOFER] Error al leer del buzón");
             break;
         }
-
+		
+		chof[n].longitud = PARKING_getLongitud(msg.hCoche);
+		chof[n].x = PARKING_getX(msg.hCoche);
+		chof[n].y = PARKING_getY(msg.hCoche);
+		
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
@@ -393,12 +397,44 @@ void aparcar_commit(HCoche hc){
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
-    // Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
+	// Comprobar si el avance es vertical o horizontal
+	if (PARKING_getX(hc) != PARKING_getX2(hc)){
+		/* Avance horizontal */
+		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
+		for (int i=0; i<nchof; i++){
+			if (PARKING_getX2(hc) == chof[i].x-chof[i].longitud){	// chof[i].x-chof[i].longitud nos da la posicion en la que acaba el coche
+				// La posicion a la que se equiere avanzar estA ocupada :(
+				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
+					if (getpid() == chof[j].pid){
+						chof[j].esperando=1;
+						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semaforo del chofer que bloquea el camino
+						chof[j].esperando=0;
+						break;
+					}
+				}
+			
+			}
+		}
+	} else {
+		/* Avance vertical */
+
+	}
+    
 
 }
 
 // Se ejecuta justo después de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
+	for (int i=0; i<nchof; i++){	// Busqueda del chofer que avanzO
+		if (getpid() == chof[i].pid){
+			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algun chOfer esetaba esperando el avance
+				if ((chof[j].x == (chof[i].x-chof[i].longitud-1)) && chof[j].esperando == 1){	// -1 porque era la posicion antes de que hubiese avanzado
+					// TODO: Liberar en el array la posicion
+					signal_sem(PARKING_getNSemAforos()+i);	// En caso que este esperando por esa posicion se hace un signal sobre el semaforo del que avanza
+				}
+			}
+		}
+	}
 }
 
 // FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
