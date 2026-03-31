@@ -26,6 +26,8 @@ union semun {
     unsigned short *array;  /* Arreglo para GETALL, SETALL */
 };
 
+
+
 /* Recursos compartidos*/
 typedef struct {
 	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
