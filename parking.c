@@ -75,6 +75,7 @@ int nchof  = 0;
 pid_t pid_padre;
 pid_t *pid = NULL;	// Array de pids hijos
 InfoChofer *chof = NULL; // Puntero al array dinámico en memoria compartida
+int chof_id = -1;
 
 
 
@@ -369,8 +370,7 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 void chofer(int n){
 	struct PARKING_mensajeBiblioteca msg;
-	
-	chof[n].pid = getpid();
+	chof_id = n;
 
     while(42){	// TODO: Cambiar por espera sin consumo de CPU
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
@@ -378,17 +378,28 @@ void chofer(int n){
 			perror("[CHOFER] Error al leer del buzón");
             break;
         }
-		
-		chof[n].longitud = PARKING_getLongitud(msg.hCoche);
-		chof[n].x = PARKING_getX(msg.hCoche);
-		chof[n].y = PARKING_getY(msg.hCoche);
-		
+		wait_sem(USER_SEM_1);
+		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
+		chof[chof_id].x = PARKING_getX(msg.hCoche);
+		chof[chof_id].y = PARKING_getY(msg.hCoche);
+		signal_sem(USER_SEM_1);
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
             PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
         }
+        // Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
+        wait_sem(USER_SEM_1);
+        chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
+        // Despierto a cualquiera que estuviera esperando
+        for (int i = 0; i < nchof; i++) {
+            if (chof[i].esperando == chof_id) {
+                chof[i].esperando = -1;
+                signal_sem(PARKING_getNSemAforos() + i); 
+            }
+        }
+        signal_sem(USER_SEM_1);
     }
 }
 
@@ -401,60 +412,77 @@ void aparcar_commit(HCoche hc){
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
-	// Comprobar si el avance es vertical o horizontal
-	if (PARKING_getX(hc) != PARKING_getX2(hc)){
-		/* Avance horizontal */
-		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
-		for (int i=0; i<nchof; i++){
-			if (PARKING_getX2(hc) == chof[i].x+chof[i].longitud){	// chof[i].x+chof[i].longitud nos da la posiciOn en la que acaba el coche
-				// La posiciOn a la que se equiere avanzar estA ocupada :(
-				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
-					if (getpid() == chof[j].pid){
-						chof[j].esperando=1;
-						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semAforo del chOfer que bloquea el camino
-						chof[j].esperando=0;
-						break;
-					}
-				}
-			}
-		}
-	} else {
-		/* Avance vertical */
-		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
-		for (int i=0; i<nchof; i++){
-			/*		        <-------------->
-					<---------------->
-			
-			*/
-			if (PARKING_getX(hc)+chof[i].longitud >= chof[i].x && PARKING_getX(hc)+PARKING_getLongitud(hc) <= chof[i].x){
-				// Hay un coche bloqueando el avance vertical
-				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
-					if (getpid() == chof[j].pid){
-						chof[j].esperando=1;
-						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semaforo del chofer que bloquea el camino
-						chof[j].esperando=0;
-						break;
-					}
-				}
-			}
-		}
-	}
+	int x_fut = PARKING_getX2(hc);
+    int y_fut = PARKING_getY2(hc);
+    int l_mio = chof[chof_id].longitud;
+    int chocado = 1;
+
+    while (chocado) { // El famoso bucle que soluciona los múltiples coches
+        chocado = 0; // Asumimos que hay vía libre hasta que se demuestre lo contrario
+        
+        wait_sem(USER_SEM_1); // CERRAMOS MUTEX para mirar el array
+        
+        for (int i = 0; i < nchof; i++) {
+            if (i == chof_id || chof[i].y == -1) continue; // Ignoramos a nosotros mismos y a los que están leyendo el buzón
+
+            // Si otro coche está en mi Y futura, comprobamos si nos pisamos en la X
+            if (chof[i].y == y_fut) {
+                // Matemática de colisión (solapamiento de segmentos)
+                if (x_fut < (chof[i].x + chof[i].longitud) && (x_fut + l_mio) > chof[i].x) {
+                    
+                    // ¡CHOQUE! Le decimos a la memoria que estamos esperando al coche 'i'
+                    chof[chof_id].esperando = i; 
+                    chocado = 1;
+                    break; // Dejamos de mirar, con chocar con uno nos vale
+                }
+            }
+        }
+        
+        signal_sem(USER_SEM_1); // ABRIMOS MUTEX
+
+        if (chocado) {
+            // Me duermo en MI PROPIO semáforo a esperar que el coche 'i' me despierte
+            wait_sem(PARKING_getNSemAforos() + chof_id); 
+            // Al despertar, el bucle while volverá a empezar y escaneará todo de nuevo
+        }
+    }
     
 
 }
 
 // Se ejecuta justo despuEs de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
-	for (int i=0; i<nchof; i++){	// BUsqueda del chOfer que avanzO
-		if (getpid() == chof[i].pid){
-			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algUn chOfer estaba esperando el avance
-				if ((chof[j].x == (chof[i].x+chof[i].longitud+2)) && chof[j].esperando == 1){	// +2 porque era la posicion antes de que hubiese avanzado
-					// TODO: Liberar en el array la posiciOn
-					signal_sem(PARKING_getNSemAforos()+i);	// En caso que estE esperando por esa posiciOn se hace un signal sobre el semAforo del que avanza
-				}
-			}
-		}
-	}
+	void permiso_avance_commit(HCoche hc){
+        wait_sem(USER_SEM_1); // CERRAMOS MUTEX
+        
+        // 1. Actualizamos nuestra posición real en el radar
+        chof[chof_id].x = PARKING_getX(hc);
+        chof[chof_id].y = PARKING_getY(hc);
+    
+        // --- EL TOQUE FINAL: LIBERAR LA ACERA ---
+        if (chof[chof_id].y == 2) {
+            int inicio = PARKING_getPosiciOnEnAcera(hc); 
+            int tam = chof[chof_id].longitud;
+
+            // ¡EL ARREGLO! Solo borro si sigo exactamente debajo de mi plaza
+            if (chof[chof_id].x == inicio && memoria_compartida->aceras[0][inicio] == 1) {
+                for (int j = inicio; j < inicio + tam; j++) {
+                    memoria_compartida->aceras[0][j] = 0; 
+                }
+            }
+        }
+    
+        // 2. Revisamos si alguien estaba esperando a que NOSOTROS nos moviéramos
+        for (int i = 0; i < nchof; i++) {
+            if (chof[i].esperando == chof_id) {
+                chof[i].esperando = -1; // Le quitamos el bloqueo
+                // Despertamos al coche 'i' tocando SU semáforo
+                signal_sem(PARKING_getNSemAforos() + i); 
+            }
+        }
+        
+        signal_sem(USER_SEM_1); // ABRIMOS MUTEX
+    }
 }
 
 // FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
