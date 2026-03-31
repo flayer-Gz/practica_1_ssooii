@@ -75,6 +75,7 @@ int nchof  = 0;
 pid_t pid_padre;
 pid_t *pid = NULL;	// Array de pids hijos
 InfoChofer *chof = NULL; // Puntero al array dinámico en memoria compartida
+int chof_id = -1;
 
 
 
@@ -369,8 +370,7 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 void chofer(int n){
 	struct PARKING_mensajeBiblioteca msg;
-	
-	chof[n].pid = getpid();
+	chof_id = n;
 
     while(42){	// TODO: Cambiar por espera sin consumo de CPU
 		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
@@ -378,17 +378,28 @@ void chofer(int n){
 			perror("[CHOFER] Error al leer del buzón");
             break;
         }
-		
-		chof[n].longitud = PARKING_getLongitud(msg.hCoche);
-		chof[n].x = PARKING_getX(msg.hCoche);
-		chof[n].y = PARKING_getY(msg.hCoche);
-		
+		wait_sem(USER_SEM_1);
+		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
+		chof[chof_id].x = PARKING_getX(msg.hCoche);
+		chof[chof_id].y = PARKING_getY(msg.hCoche);
+		signal_sem(USER_SEM_1);
         if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
         } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
             PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
         }
+        // Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
+        wait_sem(USER_SEM_1);
+        chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
+        // Despierto a cualquiera que estuviera esperando
+        for (int i = 0; i < nchof; i++) {
+            if (chof[i].esperando == chof_id) {
+                chof[i].esperando = -1;
+                signal_sem(PARKING_getNSemAforos() + i); 
+            }
+        }
+        signal_sem(USER_SEM_1);
     }
 }
 
@@ -436,15 +447,12 @@ void permiso_avance(HCoche hc){
 			}
 		}
 	}
-    
+
 
 }
 
 // Se ejecuta justo despuEs de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
-
-	
-
 	for (int i=0; i<nchof; i++){	// BUsqueda del chOfer que avanzO
 		if (getpid() == chof[i].pid){
 			for (int j=0; j<nchof; j++){	// ComprobaciOn por si algUn chOfer estaba esperando el avance
@@ -455,9 +463,6 @@ void permiso_avance_commit(HCoche hc){
 			}
 		}
 	}
-
-
-
 }
 
 // FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
