@@ -394,6 +394,10 @@ void chofer(int n){
 
 // Se ejecuta cuando el coche ha terminado de aparcar físicamente
 void aparcar_commit(HCoche hc){
+
+
+
+
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
@@ -412,12 +416,28 @@ void permiso_avance(HCoche hc){
 						break;
 					}
 				}
-			
 			}
 		}
 	} else {
 		/* Avance vertical */
-
+		// Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
+		for (int i=0; i<nchof; i++){
+			/*		        <-------------->
+					<---------------->
+			
+			*/
+			if (PARKING_getX(hc)+chof[i].longitud >= chof[i].x && PARKING_getX(hc)+PARKING_getLongitud(hc) <= chof[i].x){
+				// Hay un coche bloqueando el avance vertical
+				for (int j=0; j<nchof; j++){	// Se pone el chofer que no puede avanzar en estado:esperando
+					if (getpid() == chof[j].pid){
+						chof[j].esperando=1;
+						wait_sem(PARKING_getNSemAforos()+i);	// Wait sobre el semaforo del chofer que bloquea el camino
+						chof[j].esperando=0;
+						break;
+					}
+				}
+			}
+		}
 	}
     
 
