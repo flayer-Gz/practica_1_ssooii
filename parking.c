@@ -432,14 +432,15 @@ void permiso_avance(HCoche hc){
         if (PARKING_getX(hc) != PARKING_getX2(hc)){
             /* Avance horizontal */
             for (int i=0; i<nchof; i++){
-                if (i == chof_id || chof[i].y == -1) continue; // Nos ignoramos a nosotros mismos y a los que estAn leyendo el buzOn para que no haya deadlock
-                // Comprobar si la siguiente posiciOn estA ocupada
-                if (PARKING_getY2(hc) == chof[i].y && PARKING_getX2(hc) == chof[i].x+chof[i].longitud){ // chof[i].x+chof[i].longitud nos da la posiciOn en la que acaba el coche
-                    // La posiciOn a la que se equiere avanzar estA ocupada :(
-                    // Se pone el chofer que no puede avanzar en estado:esperando y guarda quiEn le hace esperar
-                    chof[chof_id].esperando = i;
-                    chocado = 1;                     
-                    break;
+                if (i == chof_id || chof[i].y == -1) continue; 
+                                
+                if (PARKING_getY2(hc) == chof[i].y) { // Si estamos en el mismo carril Y
+                    // Comprobamos que nuestro segmento coincide con el de cualquier otro coche
+                    if (PARKING_getX2(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x) {
+                        chof[chof_id].esperando = i;
+                        chocado = 1;                     
+                        break;
+                    }
                 }
             }
         } else {
