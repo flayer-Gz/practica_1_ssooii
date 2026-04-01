@@ -357,24 +357,37 @@ void chofer(int n){
 	chof_id = n;
 
 	while(42){	// TODO: Cambiar por espera sin consumo de CPU
-		wait_sem(CHOF_SEM);
+		// wait_sem(CHOF_SEM);
 		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
 			perror("[CHOFER] Error al leer del buzón");
 			break;
 		}
-		chof[chof_id].mi_turno = memoria_compartida->turno_dispensador;
-		memoria_compartida->turno_dispensador++;
 		
 		wait_sem(USER_SEM_1);
 		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
 		chof[chof_id].x = PARKING_getX(msg.hCoche);
 		chof[chof_id].y = PARKING_getY(msg.hCoche);
 		signal_sem(USER_SEM_1);
-		signal_sem(CHOF_SEM);
+		// signal_sem(CHOF_SEM);
+		
 		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
 			signal_sem(USER_SEM_1);
+
+			/* Asignacion de turno */
+			wait_sem(USER_SEM_1);
+			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador++;
+			signal_sem(USER_SEM_1);
+
+			/* ComprobaciOn de turno */
+			wait_sem(USER_SEM_1);
+  			while (memoria_compartida->turno_aparcar != chof[chof_id].mi_turno) {
+  			    signal_sem(USER_SEM_1);
+  			    wait_sem(PARKING_getNSemAforos() + chof_id);  // dormimos
+  			    wait_sem(USER_SEM_1);                                                                        
+  			}
+  			signal_sem(USER_SEM_1);
 
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
@@ -407,6 +420,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
 	int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
     int huecos_consecutivos = 0; // Variable auxiliar para contar los huecos seguidos que encontramos en la zona de aparcamiento
 
+	wait_sem(USER_SEM_1);
     for(int i = 0; i<80; i++){
         if(memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){ // Si el hueco estA vacIo, incremento el contador
             
@@ -419,6 +433,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
                 for(int j = posiciOn_aparcamiento; j<=i; j++){ 
                     memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
                 }
+				signal_sem(USER_SEM_1);
                 return posiciOn_aparcamiento;
         	}
         }else{
@@ -427,6 +442,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
         }
     }
     // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
+	signal_sem(USER_SEM_1);
     return -1; // Todos los sitios ocupados/no suficientemente grandes
 }
 
@@ -490,10 +506,16 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 /* Funciones de permisos */
 void aparcar_commit(HCoche hc){	// Se ejecuta cuando el coche ha terminado de aparcar físicamente
-
-
-
-
+	wait_sem(USER_SEM_1);
+	memoria_compartida->turno_aparcar++;
+	// Despertar al chófer que tiene ese nuevo turno
+	for (int i = 0; i < nchof; i++) {
+	    if (chof[i].mi_turno == memoria_compartida->turno_aparcar){	// Se busca al chofer que le toca
+	        signal_sem(PARKING_getNSemAforos() + i);	// Se despierta al chofer que tiene el turno
+	        break;
+	    }
+	}
+	signal_sem(USER_SEM_1);
 }
 // Se ejecuta para pedir permiso antes de realizar un movimiento
 void permiso_avance(HCoche hc){
