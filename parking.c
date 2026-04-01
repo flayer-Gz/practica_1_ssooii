@@ -31,22 +31,25 @@ typedef struct {
     int x, y;
     int x_futuro, y_futuro;
     int longitud;
-    int esperando; // -1 si no espera a nadie, o el ID del chofer que le bloquea
+    int esperando_a; // -1 si no espera a nadie, o el ID del chofer que le bloquea
     int necesita_liberar; // Flag que representa si un coche debe liberar su hueco de parking o no
+	int mi_turno;
 } InfoChofer;
 
 /* Recursos compartidos*/
 typedef struct {
 	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
-	int turno_aparcar;
+	int turno_aparcar;		// Siguiente coche que le coche que le toca aparcar
+	int turno_dispensador;	// Siguiente turno que da la biblioteca
 } DatosCompartidos;
 
 
 /* Macros */
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
-#define NUM_USER_SEM 2									// SemAforos para el usuario
+#define NUM_USER_SEM 3									// SemAforos para el usuario
 #define USER_SEM_1 PARKING_getNSemAforos()+nchof		// Despues de los semaforos de la biblioteca y los choferes
 #define USER_SEM_2 PARKING_getNSemAforos()+nchof+1
+#define CHOF_SEM PARKING_getNSemAforos()+nchof+2
 
 
 /* Prototipos */
@@ -86,7 +89,7 @@ DatosCompartidos *memoria_compartida = NULL; // Puntero a todos los datos de la 
 int main(int argc, char *argv[])
 {
 	pid_padre = getpid();
-
+	
 	/* Registro de seNales */
 	// SIGINT
 	struct sigaction sa;
@@ -200,6 +203,9 @@ int main(int argc, char *argv[])
     	    memoria_compartida->aceras[i][j] = 0;
         }
     }
+	/* Inicializamos los turnos */
+	memoria_compartida->turno_aparcar = 0;
+	memoria_compartida->turno_dispensador = 0;
 
     /* Mandamos todos los choferes a -1 antes de empezar por si durante la ejecuciOn con 4 chOferes por ejemplo sOlo estAn 2 antendiendo que no bloqueen al quedarse en la (x,y)=0,0*/
     for(int i = 0; i < nchof; i++){
@@ -207,7 +213,7 @@ int main(int argc, char *argv[])
         chof[i].y = -1; 
         chof[i].x_futuro = -1;
         chof[i].y_futuro = -1;
-        chof[i].esperando = -1;
+        chof[i].esperando_a = -1;
         chof[i].necesita_liberar = 0;
         chof[i].longitud = 0;
     }
@@ -228,6 +234,11 @@ int main(int argc, char *argv[])
 	}
 	// Inicializar el semAforo de usuario a 1 (como un Mutex)
 	if (semctl(sem_id, USER_SEM_2, SETVAL, arg) == -1) {
+	    perror("Error inicializando semAforo");
+		kill(getpid(), SIGINT);
+        return 1;
+	}
+	if (semctl(sem_id, CHOF_SEM, SETVAL, arg) == -1) {
 	    perror("Error inicializando semAforo");
 		kill(getpid(), SIGINT);
         return 1;
@@ -335,15 +346,65 @@ void manejador_SIGINT(int sig) {
 		_exit(0);
 	}
 }
-
 void manejador_SIGALRM(int sig){
-    PARKING_fin(1);
+	PARKING_fin(1);
     _exit(0);
+}
+
+
+void chofer(int n){
+	struct PARKING_mensajeBiblioteca msg;
+	chof_id = n;
+
+	while(42){	// TODO: Cambiar por espera sin consumo de CPU
+		wait_sem(CHOF_SEM);
+		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
+			perror("[CHOFER] Error al leer del buzón");
+			break;
+		}
+		chof[chof_id].mi_turno = memoria_compartida->turno_dispensador;
+		memoria_compartida->turno_dispensador++;
+		signal_sem(CHOF_SEM);
+
+		wait_sem(USER_SEM_1);
+		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
+		chof[chof_id].x = PARKING_getX(msg.hCoche);
+		chof[chof_id].y = PARKING_getY(msg.hCoche);
+		signal_sem(USER_SEM_1);
+		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
+			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
+			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
+			signal_sem(USER_SEM_1);
+
+			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
+
+		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
+			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
+			chof[chof_id].necesita_liberar = 1; // Al desaparcar, estamos pendientes de dejar libre el hueco cuando nos vayamos (permiso_avance_commit)
+			signal_sem(USER_SEM_1);
+
+			PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
+		}
+		// Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
+		wait_sem(USER_SEM_1);
+		chof[chof_id].x = -1;
+		chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
+		chof[chof_id].x_futuro = -1;
+		chof[chof_id].y_futuro = -1;
+		// Despierto a cualquiera que estuviera esperando
+		for (int i = 0; i < nchof; i++) {
+			if (chof[i].esperando_a == chof_id) {
+				chof[i].esperando_a = -1;
+				signal_sem(PARKING_getNSemAforos() + i); 
+			}
+		}
+		signal_sem(USER_SEM_1);
+	}
 }
 
 /* Ajustes */
 int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primera acera
-    int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
+	int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
     int huecos_consecutivos = 0; // Variable auxiliar para contar los huecos seguidos que encontramos en la zona de aparcamiento
 
     for(int i = 0; i<80; i++){
@@ -375,6 +436,8 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
 }
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
+
+	/*
 	int tam_mejor = 100;	// TamaNo del hueco mas justo (pequeNo)
 	int pos_mejor = -1;
 	int huecos_consecutivos = 0;
@@ -408,6 +471,11 @@ int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera
 	signal_sem(USER_SEM_2);
 
 	return pos_mejor;
+
+	*/
+
+
+	return -2; // Por ahora ya que a velocidad 0 no funciona
 }
 
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
@@ -416,57 +484,12 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 
     return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+
 }
 
 
-void chofer(int n){
-	struct PARKING_mensajeBiblioteca msg;
-	chof_id = n;
-
-    while(42){	// TODO: Cambiar por espera sin consumo de CPU
-		// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
-        if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){
-			perror("[CHOFER] Error al leer del buzón");
-            break;
-        }
-		wait_sem(USER_SEM_1);
-		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
-		chof[chof_id].x = PARKING_getX(msg.hCoche);
-		chof[chof_id].y = PARKING_getY(msg.hCoche);
-		signal_sem(USER_SEM_1);
-        if (msg.subtipo == PARKING_MSGSUB_APARCAR){
-            wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
-            chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
-            signal_sem(USER_SEM_1);
-
-			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
-
-        } else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
-            wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
-            chof[chof_id].necesita_liberar = 1; // Al desaparcar, estamos pendientes de dejar libre el hueco cuando nos vayamos (permiso_avance_commit)
-            signal_sem(USER_SEM_1);
-
-            PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
-        }
-        // Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
-        wait_sem(USER_SEM_1);
-        chof[chof_id].x = -1;
-        chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
-        chof[chof_id].x_futuro = -1;
-        chof[chof_id].y_futuro = -1;
-        // Despierto a cualquiera que estuviera esperando
-        for (int i = 0; i < nchof; i++) {
-            if (chof[i].esperando == chof_id) {
-                chof[i].esperando = -1;
-                signal_sem(PARKING_getNSemAforos() + i); 
-            }
-        }
-        signal_sem(USER_SEM_1);
-    }
-}
-
-// Se ejecuta cuando el coche ha terminado de aparcar físicamente
-void aparcar_commit(HCoche hc){
+/* Funciones de permisos */
+void aparcar_commit(HCoche hc){	// Se ejecuta cuando el coche ha terminado de aparcar físicamente
 
 
 
@@ -479,7 +502,7 @@ void permiso_avance(HCoche hc){
 
         wait_sem(USER_SEM_1); // Protegemos la lectura de chof
         chocado = 0; // Asumimos que de momento no hubo choque
-        chof[chof_id].esperando = -1; // Reiniciamos a quiEn estamos esperando por si es otra vuelta del bucle
+        chof[chof_id].esperando_a = -1; // Reiniciamos a quiEn estamos esperando por si es otra vuelta del bucle
 
         // Comprobar si el avance es vertical o horizontal
         if(PARKING_getX(hc) != PARKING_getX2(hc)){
@@ -499,7 +522,7 @@ void permiso_avance(HCoche hc){
                                     (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
 
                 if(choca_actual || choca_futuro){
-                    chof[chof_id].esperando = i;
+                    chof[chof_id].esperando_a = i;
                     chocado = 1;                     
                     break;
                 }
@@ -517,7 +540,7 @@ void permiso_avance(HCoche hc){
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
 
                 if(choca_actual_v || choca_futuro_v){
-                    chof[chof_id].esperando = i;
+                    chof[chof_id].esperando_a = i;
                     chocado = 1;
                     break;
                 }
@@ -538,7 +561,6 @@ void permiso_avance(HCoche hc){
         }
     }
 }
-
 // Se ejecuta justo despuEs de que el coche se ha movido
 void permiso_avance_commit(HCoche hc){
     wait_sem(USER_SEM_1); // Protegemos el acceso a la memoria compartida
@@ -562,8 +584,8 @@ void permiso_avance_commit(HCoche hc){
     }
     // Despertamos a los que estaban esperando a nuestro movimiento
     for(int i = 0; i < nchof; i++){
-        if(chof[i].esperando == chof_id){ // Si el campo esperando de cualquiera de los chOferes estA esperando por mI, le mando signal, para que sepa que ya me movI
-            chof[i].esperando = -1; // Limpio el campo de ese chOfer que esperaba por mI
+        if(chof[i].esperando_a == chof_id){ // Si el campo esperando de cualquiera de los chOferes estA esperando por mI, le mando signal, para que sepa que ya me movI
+            chof[i].esperando_a = -1; // Limpio el campo de ese chOfer que esperaba por mI
             signal_sem(PARKING_getNSemAforos() + i); // Despertamos al coche que esperaba por nosotros
         }
     }
@@ -587,6 +609,8 @@ void permiso_avance_commit(HCoche hc){
     }
 }*/
 
+
+/* Funciones de semAforos */
 // FunciOn para hacer un WAIT
 void wait_sem(int num_semAforo) {
     struct sembuf sops[1]; // Actuamos solo sobre 1 semAforo
