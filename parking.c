@@ -359,11 +359,16 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
 }
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
+	// Sitio mas justo
+	for (int i=0; i<80; i++)
 
     return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
 }
 
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
+	// Sitio con mas espacio
+
+
 
     return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
 }
