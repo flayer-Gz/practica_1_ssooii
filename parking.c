@@ -46,14 +46,13 @@ typedef struct {
 
 /* Macros */
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
-#define NUM_USER_SEM 3									// SemAforos para el usuario
+#define NUM_USER_SEM 2									// SemAforos para el usuario
 #define USER_SEM_1 PARKING_getNSemAforos()+nchof		// Despues de los semaforos de la biblioteca y los choferes
 #define USER_SEM_2 PARKING_getNSemAforos()+nchof+1
-#define CHOF_SEM PARKING_getNSemAforos()+nchof+2
 
 
 /* Prototipos */
-int limpiar_recursos(int sem_id, int shm_id, int buz_id);
+int limpiar_recursos();
 
 void manejador_SIGINT(int sig);
 void manejador_SIGALRM(int sig);
@@ -192,7 +191,6 @@ int main(int argc, char *argv[])
 
     /* Ajustamos la posiciOn dOnde comienza nuestra memoria compartida */
     memoria_compartida = (DatosCompartidos *)((char *)memoria_base + offset);
-	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
 
     // El array de la posiciOn de los chOferes empieza justo donde acaba la estructura
     chof = (InfoChofer *)(memoria_compartida + 1);
@@ -216,6 +214,7 @@ int main(int argc, char *argv[])
         chof[i].esperando_a = -1;
         chof[i].necesita_liberar = 0;
         chof[i].longitud = 0;
+		chof[i].mi_turno = -1;	// Valor invalido para que no pueda coincidir por error
     }
 
 	// Inicializamos todos los semAforos de los chOferes a 0
@@ -238,12 +237,6 @@ int main(int argc, char *argv[])
 		kill(getpid(), SIGINT);
         return 1;
 	}
-	if (semctl(sem_id, CHOF_SEM, SETVAL, arg) == -1) {
-	    perror("Error inicializando semAforo");
-		kill(getpid(), SIGINT);
-        return 1;
-	}
-
 
 
     /* EjecuciOn */
@@ -296,7 +289,7 @@ int main(int argc, char *argv[])
 
 
 
-int limpiar_recursos(int sem_id, int shm_id, int buz_id){
+int limpiar_recursos(){
     int cod_err=0;
 
     if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
@@ -322,27 +315,27 @@ int limpiar_recursos(int sem_id, int shm_id, int buz_id){
 /* Manejadoras */
 void manejador_SIGINT(int sig) {
 	if (getpid() == pid_padre){
+		// Limpieza de procesos
+		if (pid != NULL){
+			for (int i=0; i<nchof+1; i++){
+				if (pid[i] > 0)
+					kill(pid[i], SIGTERM);
+			}
+			// Esperar a que terminen
+			for (int i=0; i<nchof+1; i++){
+				if (pid[i] > 0)
+					waitpid(pid[i], NULL, 0);
+			}
+			free(pid);
+		}
 		// Limpieza de recursos
     	write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
-    	if (limpiar_recursos(sem_id, shm_id, buz_id)){
+    	if (limpiar_recursos()){
 			write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
 			return;
     	} else
 			write(STDOUT_FILENO, "Recursos liberados correctamente.\n", 34);
 
-		// Limpieza de procesos
-		if (pid != NULL){
-            for (int i=0; i<nchof+1; i++){
-                if (pid[i] > 0)
-                    kill(pid[i], SIGTERM);
-            }
-            // Esperar a que terminen
-            for (int i=0; i<nchof+1; i++){
-                if (pid[i] > 0)
-                    waitpid(pid[i], NULL, 0);
-            }
-            free(pid);
-        }
 		_exit(0);
 	}
 }
@@ -351,13 +344,13 @@ void manejador_SIGALRM(int sig){
     _exit(0);
 }
 
-
+/* FunciOn que ejecutan todos los chOferes */
 void chofer(int n){
 	struct PARKING_mensajeBiblioteca msg;
 	chof_id = n;
 
-	while(42){	// TODO: Cambiar por espera sin consumo de CPU
-		// wait_sem(CHOF_SEM);
+	while(42){
+		wait_sem(USER_SEM_2);
 		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
 			perror("[CHOFER] Error al leer del buzón");
 			break;
@@ -368,35 +361,35 @@ void chofer(int n){
 		chof[chof_id].x = PARKING_getX(msg.hCoche);
 		chof[chof_id].y = PARKING_getY(msg.hCoche);
 		signal_sem(USER_SEM_1);
-		// signal_sem(CHOF_SEM);
 		
 		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
-			signal_sem(USER_SEM_1);
-
+			
 			/* Asignacion de turno */
-			wait_sem(USER_SEM_1);
 			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador++;
-			signal_sem(USER_SEM_1);
+			signal_sem(USER_SEM_2);	// Se deja leer el buzon a otro una vez hemos cogido turno
 
 			/* ComprobaciOn de turno */
-			wait_sem(USER_SEM_1);
-  			while (memoria_compartida->turno_aparcar != chof[chof_id].mi_turno) {
-  			    signal_sem(USER_SEM_1);
-  			    wait_sem(PARKING_getNSemAforos() + chof_id);  // dormimos
-  			    wait_sem(USER_SEM_1);                                                                        
-  			}
+  			while (memoria_compartida->turno_aparcar != chof[chof_id].mi_turno){
+				  signal_sem(USER_SEM_1);	// Suelta el mutex para no quedarse dormido con el
+				  wait_sem(PARKING_getNSemAforos() + chof_id);  // dormimos
+				  wait_sem(USER_SEM_1);
+			}
   			signal_sem(USER_SEM_1);
 
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
 		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
+			signal_sem(USER_SEM_2);	// Dejamos que otro lea el buzon
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 1; // Al desaparcar, estamos pendientes de dejar libre el hueco cuando nos vayamos (permiso_avance_commit)
 			signal_sem(USER_SEM_1);
 
 			PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
+		} else {
+			// Si llega un tipo de mensaje desconocido
+			signal_sem(USER_SEM_2);	// Dejamos que otro lea el buzon
 		}
 		// Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
 		wait_sem(USER_SEM_1);
@@ -458,7 +451,7 @@ int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera
 	int pos_mejor = -1;
 	int huecos_consecutivos = 0;
 
-	wait_sem(USER_SEM_2);
+	wait_sem(USER_SEM_1);
 
 	// Sitio mas justo
 	for (int i=0; i<81; i++){
@@ -477,14 +470,14 @@ int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera
 
     if (pos_mejor == -1){
 		// No se encontrO
-		signal_sem(USER_SEM_2);
+		signal_sem(USER_SEM_1);
 		return -1;
 	}
 	// Reserva del hueco
 	for(int i = pos_mejor; i<PARKING_getLongitud(hc)+pos_mejor; i++){ 
         memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
     }
-	signal_sem(USER_SEM_2);
+	signal_sem(USER_SEM_1);
 
 	return pos_mejor;
 
@@ -550,7 +543,7 @@ void permiso_avance(HCoche hc){
                 }
             }
         }else{
-            /* Avance vertical (Hacemos exactamente lo mismo pero sin la Y, como querías) */
+            /* Avance vertical (Hacemos exactamente lo mismo pero sin la Y) */
             for(int i=0; i<nchof; i++){
                 if(i == chof_id || chof[i].y == -1) continue;
 
