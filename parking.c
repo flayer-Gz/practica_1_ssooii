@@ -364,13 +364,13 @@ void chofer(int n){
 		}
 		chof[chof_id].mi_turno = memoria_compartida->turno_dispensador;
 		memoria_compartida->turno_dispensador++;
-		signal_sem(CHOF_SEM);
-
+		
 		wait_sem(USER_SEM_1);
 		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
 		chof[chof_id].x = PARKING_getX(msg.hCoche);
 		chof[chof_id].y = PARKING_getY(msg.hCoche);
 		signal_sem(USER_SEM_1);
+		signal_sem(CHOF_SEM);
 		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
