@@ -204,7 +204,7 @@ int main(int argc, char *argv[])
     union semun arg;
     arg.val = 0;
     for (int i = 0; i < nchof; i++) {
-        semctl(sem_id, USER_SEM_1 + 1 + i, SETVAL, arg); 
+        semctl(sem_id, PARKING_getNSemAforos() + i, SETVAL, arg); 
     }
 
 	// Inicializar el semAforo de usuario a 1 (como un Mutex)
@@ -436,9 +436,10 @@ void permiso_avance(HCoche hc){
         // Comprobar si el avance es vertical o horizontal
         if (PARKING_getX(hc) != PARKING_getX2(hc)){
             /* Avance horizontal */
-            // Comprobar si la siguiente posiciOn estA ocupada getX2(hc);
             for (int i=0; i<nchof; i++){
-                if (PARKING_getX2(hc) == chof[i].x+chof[i].longitud){ // chof[i].x+chof[i].longitud nos da la posiciOn en la que acaba el coche
+                if (i == chof_id || chof[i].y == -1) continue; // Nos ignoramos a nosotros mismos y a los que estAn leyendo el buzOn para que no haya deadlock
+                // Comprobar si la siguiente posiciOn estA ocupada
+                if (PARKING_getY2(hc) == chof[i].y && PARKING_getX2(hc) == chof[i].x+chof[i].longitud){ // chof[i].x+chof[i].longitud nos da la posiciOn en la que acaba el coche
                     // La posiciOn a la que se equiere avanzar estA ocupada :(
                     // Se pone el chofer que no puede avanzar en estado:esperando y guarda quiEn le hace esperar
                     chof[chof_id].esperando = i;
@@ -450,7 +451,9 @@ void permiso_avance(HCoche hc){
             /* Avance vertical */
             // Comprobar si la siguiente posiciOn estA ocupada
             for (int i=0; i<nchof; i++){
-                if (PARKING_getX(hc)+chof[i].longitud >= chof[i].x && PARKING_getX(hc)+PARKING_getLongitud(hc) <= chof[i].x){
+                if (i == chof_id || chof[i].y == -1) continue; // Nos ignoramos a nosotros mismos y a los que estAn leyendo el buzOn para que no haya deadlock
+
+                if (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x){
                     // Hay un coche bloqueando el avance vertical
                     // Se pone el chOfer que no puede avanzar en estado:esperando y guarda quiEn le hace esperar
                     chof[chof_id].esperando = i;
