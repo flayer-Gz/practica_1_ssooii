@@ -53,7 +53,7 @@ typedef struct {
 
 
 /* Prototipos */
-int limpiar_recursos(int sem_id, int shm_id, int buz_id);
+int limpiar_recursos();
 
 void manejador_SIGINT(int sig);
 void manejador_SIGALRM(int sig);
@@ -80,7 +80,7 @@ int nchof  = 0;
 pid_t pid_padre;
 pid_t *pid = NULL;	// Array de pids hijos
 InfoChofer *chof = NULL; // Puntero al array dinámico en memoria compartida
-int chof_id = -1;
+int chof_id = -1;	// Creo que esto no hace falta que sea global, puede ser local para cada chofer
 
 
 
@@ -192,7 +192,10 @@ int main(int argc, char *argv[])
 
     /* Ajustamos la posiciOn dOnde comienza nuestra memoria compartida */
     memoria_compartida = (DatosCompartidos *)((char *)memoria_base + offset);
-	memoria_compartida->turno_aparcar = 1; // El primer coche en entrar es el 1
+	
+	/* Inicializamos los turnos */
+	memoria_compartida->turno_aparcar = 0;
+	memoria_compartida->turno_dispensador = 0;
 
     // El array de la posiciOn de los chOferes empieza justo donde acaba la estructura
     chof = (InfoChofer *)(memoria_compartida + 1);
@@ -203,9 +206,6 @@ int main(int argc, char *argv[])
     	    memoria_compartida->aceras[i][j] = 0;
         }
     }
-	/* Inicializamos los turnos */
-	memoria_compartida->turno_aparcar = 0;
-	memoria_compartida->turno_dispensador = 0;
 
     /* Mandamos todos los choferes a -1 antes de empezar por si durante la ejecuciOn con 4 chOferes por ejemplo sOlo estAn 2 antendiendo que no bloqueen al quedarse en la (x,y)=0,0*/
     for(int i = 0; i < nchof; i++){
@@ -296,7 +296,7 @@ int main(int argc, char *argv[])
 
 
 
-int limpiar_recursos(int sem_id, int shm_id, int buz_id){
+int limpiar_recursos(){
     int cod_err=0;
 
     if ((sem_id != -1) && (semctl(sem_id, 0, IPC_RMID) == -1)){
@@ -324,7 +324,7 @@ void manejador_SIGINT(int sig) {
 	if (getpid() == pid_padre){
 		// Limpieza de recursos
     	write(STDOUT_FILENO, "\nLiberando recursos...\n", 23);
-    	if (limpiar_recursos(sem_id, shm_id, buz_id)){
+    	if (limpiar_recursos()){
 			write(STDOUT_FILENO, "No se han podido liberar los recursos.\n", 39);
 			return;
     	} else
