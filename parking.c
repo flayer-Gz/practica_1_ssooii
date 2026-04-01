@@ -29,6 +29,7 @@ union semun {
 typedef struct {
 	pid_t pid;
     int x, y;
+    int x_futuro, y_futuro;
     int longitud;
     int esperando; // -1 si no espera a nadie, o el ID del chofer que le bloquea
     int necesita_liberar; // Flag que representa si un coche debe liberar su hueco de parking o no
@@ -198,6 +199,17 @@ int main(int argc, char *argv[])
         for (int j = 0; j < 80; j++) {
     	    memoria_compartida->aceras[i][j] = 0;
         }
+    }
+
+    /* Mandamos todos los choferes a -1 antes de empezar por si durante la ejecuciOn con 4 chOferes por ejemplo sOlo estAn 2 antendiendo que no bloqueen al quedarse en la (x,y)=0,0*/
+    for(int i = 0; i < nchof; i++){
+        chof[i].x = -1;
+        chof[i].y = -1; 
+        chof[i].x_futuro = -1;
+        chof[i].y_futuro = -1;
+        chof[i].esperando = -1;
+        chof[i].necesita_liberar = 0;
+        chof[i].longitud = 0;
     }
 
 	// Inicializamos todos los semAforos de los chOferes a 0
@@ -400,7 +412,10 @@ void chofer(int n){
         }
         // Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
         wait_sem(USER_SEM_1);
+        chof[chof_id].x = -1;
         chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
+        chof[chof_id].x_futuro = -1;
+        chof[chof_id].y_futuro = -1;
         // Despierto a cualquiera que estuviera esperando
         for (int i = 0; i < nchof; i++) {
             if (chof[i].esperando == chof_id) {
@@ -429,29 +444,41 @@ void permiso_avance(HCoche hc){
         chof[chof_id].esperando = -1; // Reiniciamos a quiEn estamos esperando por si es otra vuelta del bucle
 
         // Comprobar si el avance es vertical o horizontal
-        if (PARKING_getX(hc) != PARKING_getX2(hc)){
+        if(PARKING_getX(hc) != PARKING_getX2(hc)){
             /* Avance horizontal */
             for (int i=0; i<nchof; i++){
                 if (i == chof_id || chof[i].y == -1) continue; 
-                                
-                if (PARKING_getY2(hc) == chof[i].y) { // Si estamos en el mismo carril Y
-                    // Comprobamos que nuestro segmento coincide con el de cualquier otro coche
-                    if (PARKING_getX2(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x) {
-                        chof[chof_id].esperando = i;
-                        chocado = 1;                     
-                        break;
-                    }
+                
+                // ¿Choco con dónde ESTÁ el coche ahora mismo? (Protege culos)
+                int choca_actual = (PARKING_getY2(hc) == chof[i].y && 
+                                    PARKING_getX2(hc) < (chof[i].x + chof[i].longitud) && 
+                                    (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x);
+                
+                // ¿Choco con hacia dónde VA el coche? (Evita colisiones frontales/laterales)
+                int choca_futuro = (chof[i].y_futuro != -1 && 
+                                    PARKING_getY2(hc) == chof[i].y_futuro && 
+                                    PARKING_getX2(hc) < (chof[i].x_futuro + chof[i].longitud) && 
+                                    (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
+
+                if(choca_actual || choca_futuro){
+                    chof[chof_id].esperando = i;
+                    chocado = 1;                     
+                    break;
                 }
             }
-        } else {
-            /* Avance vertical */
-            // Comprobar si la siguiente posiciOn estA ocupada
-            for (int i=0; i<nchof; i++){
-                if (i == chof_id || chof[i].y == -1) continue; // Nos ignoramos a nosotros mismos y a los que estAn leyendo el buzOn para que no haya deadlock
+        }else{
+            /* Avance vertical (Hacemos exactamente lo mismo pero sin la Y, como querías) */
+            for(int i=0; i<nchof; i++){
+                if(i == chof_id || chof[i].y == -1) continue;
 
-                if (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x){
-                    // Hay un coche bloqueando el avance vertical
-                    // Se pone el chOfer que no puede avanzar en estado:esperando y guarda quiEn le hace esperar
+                int choca_actual_v = (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
+                                      (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
+                                      
+                int choca_futuro_v = (chof[i].x_futuro != -1 && 
+                                      PARKING_getX(hc) < (chof[i].x_futuro + chof[i].longitud) && 
+                                      (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
+
+                if(choca_actual_v || choca_futuro_v){
                     chof[chof_id].esperando = i;
                     chocado = 1;
                     break;
@@ -464,6 +491,10 @@ void permiso_avance(HCoche hc){
             wait_sem(PARKING_getNSemAforos() + chof_id); // Wait sobre el semAforo de nuestro chOfer
             // Si aqui ya han despertado a este chOfer, vuelve a entrar en el while y comprueba por si hay otro coche bloqueando
         }else{
+            // Reservo el siguiente paso que voy a dar, por si me quitan la posicion antes de dar el paso que el resto ya lo sepan
+            chof[chof_id].x_futuro = PARKING_getX2(hc);
+            chof[chof_id].y_futuro = PARKING_getY2(hc);
+
             signal_sem(USER_SEM_1); // Dejo que el siguiente entre
             // Como chocado serIa = 0, sale del while y el coche puede seguir avanzando hasta que encuentre otra colisiOn
         }
@@ -477,6 +508,9 @@ void permiso_avance_commit(HCoche hc){
     // Actualizamos la posiciOn de este coche
     chof[chof_id].x = PARKING_getX(hc);
     chof[chof_id].y = PARKING_getY(hc);
+    // Como ya hemos llegado, limpiamos la posiciOn futura
+    chof[chof_id].x_futuro = -1;
+    chof[chof_id].y_futuro = -1;
 
 	// TODO: liberar las posiciones del parking cuando el coche ya haya salido a la carretera (y == 2)
     if(chof[chof_id].y == 2 && chof[chof_id].necesita_liberar == 1){ // El coche ha llegado a la carretera y estA desaparcando 
