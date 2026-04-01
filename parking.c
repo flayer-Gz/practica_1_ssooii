@@ -43,9 +43,9 @@ typedef struct {
 
 /* Macros */
 #define NUM_USER_SHM (sizeof(DatosCompartidos) + 8)		// Bytes de memoria comp. para el usuario (con un poco de mArgen por si acaso)
-#define NUM_USER_SEM 1									// SemAforos para el usuario
+#define NUM_USER_SEM 2									// SemAforos para el usuario
 #define USER_SEM_1 PARKING_getNSemAforos()+nchof		// Despues de los semaforos de la biblioteca y los choferes
-
+#define USER_SEM_2 PARKING_getNSemAforos()+nchof+1
 
 
 /* Prototipos */
@@ -214,6 +214,12 @@ int main(int argc, char *argv[])
 		kill(getpid(), SIGINT);
         return 1;
 	}
+	// Inicializar el semAforo de usuario a 1 (como un Mutex)
+	if (semctl(sem_id, USER_SEM_2, SETVAL, arg) == -1) {
+	    perror("Error inicializando semAforo");
+		kill(getpid(), SIGINT);
+        return 1;
+	}
 
 
 
@@ -341,16 +347,14 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
                     memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
                 }
                 return posiciOn_aparcamiento;
-        }
+        	}
         }else{
             // Si el hueco no estA vacIo (tendrA un 1), reinicio el contador de huecos
             huecos_consecutivos = 0;
         }
     }
-
     // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
     return -1; // Todos los sitios ocupados/no suficientemente grandes
-
 }
 
 int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la segunda acera
@@ -359,10 +363,39 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
 }
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
-	// Sitio mas justo
-	for (int i=0; i<80; i++)
+	int tam_mejor = 100;	// TamaNo del hueco mas justo (pequeNo)
+	int pos_mejor = -1;
+	int huecos_consecutivos = 0;
 
-    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+	wait_sem(USER_SEM_2);
+
+	// Sitio mas justo
+	for (int i=0; i<81; i++){
+		if (i < 80 && memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){
+			huecos_consecutivos++;
+		} else {
+			// LLegamos al final del hueco
+			if (huecos_consecutivos >= PARKING_getLongitud(hc) && huecos_consecutivos <= tam_mejor){
+				// Si es el heco mas justo hasta ahora guardamos su posicion
+				tam_mejor = huecos_consecutivos;
+				pos_mejor = i - huecos_consecutivos;
+			}
+			huecos_consecutivos=0;
+		}
+	}
+
+    if (pos_mejor == -1){
+		// No se encontrO
+		signal_sem(USER_SEM_2);
+		return -1;
+	}
+	// Reserva del hueco
+	for(int i = pos_mejor; i<PARKING_getLongitud(hc)+pos_mejor; i++){ 
+        memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+    }
+	signal_sem(USER_SEM_2);
+
+	return pos_mejor;
 }
 
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
