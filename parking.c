@@ -313,8 +313,8 @@ int limpiar_recursos(){
 }
 
 /* Manejadoras */
-void manejador_SIGINT(int sig) {
-	if (getpid() == pid_padre){
+void manejador_SIGINT(int sig){	// Importante matar los procesos antes de borrar los IPCs para 
+	if (getpid() == pid_padre){	// que no intenten acceder a ellos cuando han sido borrados
 		// Limpieza de procesos
 		if (pid != NULL){
 			for (int i=0; i<nchof+1; i++){
@@ -356,12 +356,6 @@ void chofer(int n){
 			break;
 		}
 		
-		wait_sem(USER_SEM_1);
-		chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
-		chof[chof_id].x = PARKING_getX(msg.hCoche);
-		chof[chof_id].y = PARKING_getY(msg.hCoche);
-		signal_sem(USER_SEM_1);
-		
 		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
@@ -376,13 +370,20 @@ void chofer(int n){
 				  wait_sem(PARKING_getNSemAforos() + chof_id);  // dormimos
 				  wait_sem(USER_SEM_1);
 			}
-  			signal_sem(USER_SEM_1);
-
+			// Una vez es nuestro turno reservamos la posicion
+			chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
+			chof[chof_id].x = PARKING_getX(msg.hCoche);
+			chof[chof_id].y = PARKING_getY(msg.hCoche);
+			signal_sem(USER_SEM_1);
+				
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
 		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
 			signal_sem(USER_SEM_2);	// Dejamos que otro lea el buzon
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
+			chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
+			chof[chof_id].x = PARKING_getX(msg.hCoche);
+			chof[chof_id].y = PARKING_getY(msg.hCoche);
 			chof[chof_id].necesita_liberar = 1; // Al desaparcar, estamos pendientes de dejar libre el hueco cuando nos vayamos (permiso_avance_commit)
 			signal_sem(USER_SEM_1);
 
@@ -446,20 +447,24 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
 
+	// TODO: Al usar esta funcion a veces se queda congelado y a veces no asigna la posicion correcta hay que darle una vuelta a la logica
+	
 	/*
 	int tam_mejor = 100;	// TamaNo del hueco mas justo (pequeNo)
 	int pos_mejor = -1;
 	int huecos_consecutivos = 0;
+	int tamano_coche = PARKING_getLongitud(hc);
+	int algoritmo = PARKING_getAlgoritmo(hc);
 
 	wait_sem(USER_SEM_1);
 
 	// Sitio mas justo
 	for (int i=0; i<81; i++){
-		if (i < 80 && memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){
+		if (i < 80 && memoria_compartida->aceras[algoritmo][i] == 0){
 			huecos_consecutivos++;
 		} else {
 			// LLegamos al final del hueco
-			if (huecos_consecutivos >= PARKING_getLongitud(hc) && huecos_consecutivos <= tam_mejor){
+			if (huecos_consecutivos >= tamano_coche && huecos_consecutivos <= tam_mejor){
 				// Si es el heco mas justo hasta ahora guardamos su posicion
 				tam_mejor = huecos_consecutivos;
 				pos_mejor = i - huecos_consecutivos;
@@ -483,8 +488,7 @@ int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera
 
 	*/
 
-
-	return -2; // Por ahora ya que a velocidad 0 no funciona
+	return -2;
 }
 
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
@@ -547,10 +551,12 @@ void permiso_avance(HCoche hc){
             for(int i=0; i<nchof; i++){
                 if(i == chof_id || chof[i].y == -1) continue;
 
-                int choca_actual_v = (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
+                int choca_actual_v = (PARKING_getY2(hc) == chof[i].y && 
+									  PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
                                       
                 int choca_futuro_v = (chof[i].x_futuro != -1 && 
+									  PARKING_getY2(hc) == chof[i].y_futuro &&
                                       PARKING_getX(hc) < (chof[i].x_futuro + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
 
