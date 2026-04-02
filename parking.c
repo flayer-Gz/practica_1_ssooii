@@ -630,10 +630,9 @@ void permiso_avance(HCoche hc){
                 if(i == chof_id || chof[i].y == -1) continue;
                 if(chof[i].mi_acera != chof[chof_id].mi_acera) continue;	// Si no estA en mi acera no compruebo
 
-                int choca_actual_v = (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
-                                      (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
+                int choca_actual_v = (PARKING_getY2(hc) == chof[i].y && PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
                                       
-                int choca_futuro_v = (chof[i].x_futuro != -1 && 
+                int choca_futuro_v = (chof[i].y_futuro != -1 && PARKING_getY2(hc) == chof[i].y_futuro && 
                                       PARKING_getX(hc) < (chof[i].x_futuro + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
 
