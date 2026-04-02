@@ -455,7 +455,14 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
     int pos_ultimo = memoria_compartida->ultimo_sig_ajuste; // Guardamos dOnde aparcO el Ultimo
     int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
     int huecos_consecutivos = 0; 
-    
+
+    // Si el hueco que dejO el Ultimo ya se liberO, retrocedemos hasta el incio del parking o hasta que encontremos el coche que estA detrAs en el parking
+    if (memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][pos_ultimo] == 0) {
+        while (pos_ultimo > 0 && memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][pos_ultimo - 1] == 0) {
+            pos_ultimo--; // Caminamos hacia atrás
+        }
+    }
+    //Buscamos desde el ULtimo hasta el final del parking
     for(int i = pos_ultimo; i<80; i++){
         if(memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){ // Si el hueco estA vacIo, incremento el contador
             
@@ -600,12 +607,12 @@ void permiso_avance(HCoche hc){
                 if (i == chof_id || chof[i].y == -1) continue;
                 if (chof[i].mi_acera != chof[chof_id].mi_acera) continue;	// Si no estA en mi acera no compruebo
                 
-                // ¿Choco con dónde ESTÁ el coche ahora mismo? (Protege culos)
+                // ¿Choco con dOnde estA el coche ahora mismo?
                 int choca_actual = (PARKING_getY2(hc) == chof[i].y && 
                                     PARKING_getX2(hc) < (chof[i].x + chof[i].longitud) && 
                                     (PARKING_getX2(hc) + PARKING_getLongitud(hc)) > chof[i].x);
                 
-                // ¿Choco con hacia dónde VA el coche? (Evita colisiones frontales/laterales)
+                // ¿Choco con hacia dOnde va el coche? 
                 int choca_futuro = (chof[i].y_futuro != -1 && 
                                     PARKING_getY2(hc) == chof[i].y_futuro && 
                                     PARKING_getX2(hc) < (chof[i].x_futuro + chof[i].longitud) && 
