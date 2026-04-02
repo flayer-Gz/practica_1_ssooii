@@ -34,13 +34,14 @@ typedef struct {
     int esperando_a; // -1 si no espera a nadie, o el ID del chofer que le bloquea
     int necesita_liberar; // Flag que representa si un coche debe liberar su hueco de parking o no
 	int mi_turno;
+	int mi_acera;   // Acera a la que corresponde el turno de este chofer
 } InfoChofer;
 
 /* Recursos compartidos*/
 typedef struct {
 	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
-	int turno_aparcar;		// Siguiente coche que le coche que le toca aparcar
-	int turno_dispensador;	// Siguiente turno que da la biblioteca
+	int turno_aparcar[4];		// Siguiente turno que toca aparcar, uno por acera
+	int turno_dispensador[4];	// Siguiente turno que da la biblioteca, uno por acera
     int ultimo_sig_ajuste;  // Marcador del Ultimo que aparcO en esa acera
 } DatosCompartidos;
 
@@ -203,8 +204,10 @@ int main(int argc, char *argv[])
         }
     }
 	/* Inicializamos los turnos y el marcador de posicion de siguiente_ajuste*/
-	memoria_compartida->turno_aparcar = 0;
-	memoria_compartida->turno_dispensador = 0;
+	for (int i = 0; i < 4; i++){
+		memoria_compartida->turno_aparcar[i] = 0;
+		memoria_compartida->turno_dispensador[i] = 0;
+	}
     memoria_compartida->ultimo_sig_ajuste = 0;
 
     /* Mandamos todos los choferes a -1 antes de empezar por si durante la ejecuciOn con 4 chOferes por ejemplo sOlo estAn 2 antendiendo que no bloqueen al quedarse en la (x,y)=0,0*/
@@ -217,6 +220,7 @@ int main(int argc, char *argv[])
         chof[i].necesita_liberar = 0;
         chof[i].longitud = 0;
 		chof[i].mi_turno = -1;	// Valor invalido para que no pueda coincidir por error
+		chof[i].mi_acera = -1;
     }
 
 	// Inicializamos todos los semAforos de los chOferes a 0
@@ -362,13 +366,15 @@ void chofer(int n){
 		if (msg.subtipo == PARKING_MSGSUB_APARCAR){
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
-			
-			/* Asignacion de turno */
-			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador++;
+
+			/* Asignacion de turno por acera */
+			int acera = PARKING_getAlgoritmo(msg.hCoche);
+			chof[chof_id].mi_acera = acera;
+			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador[acera]++;
 			signal_sem(USER_SEM_2);	// Se deja leer el buzon a otro una vez hemos cogido turno
 
 			/* ComprobaciOn de turno */
-  			while (memoria_compartida->turno_aparcar != chof[chof_id].mi_turno){
+  			while (memoria_compartida->turno_aparcar[acera] != chof[chof_id].mi_turno){
 				  signal_sem(USER_SEM_1);	// Suelta el mutex para no quedarse dormido con el
 				  wait_sem(PARKING_getNSemAforos() + chof_id);  // dormimos
 				  wait_sem(USER_SEM_1);
@@ -384,6 +390,7 @@ void chofer(int n){
 		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
 			signal_sem(USER_SEM_2); // Se deja que otro lea el buzOn
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
+			chof[chof_id].mi_acera = PARKING_getAlgoritmo(msg.hCoche);
 			chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
 			chof[chof_id].x = PARKING_getX(msg.hCoche);
 			chof[chof_id].y = PARKING_getY(msg.hCoche);
@@ -444,7 +451,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
 }
 
 int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la segunda acera
-    /*wait_sem(USER_SEM_1);
+    wait_sem(USER_SEM_1);
     int pos_ultimo = memoria_compartida->ultimo_sig_ajuste; // Guardamos dOnde aparcO el Ultimo
     int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
     int huecos_consecutivos = 0; 
@@ -564,12 +571,14 @@ int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta a
 
 /* Funciones de permisos */
 void aparcar_commit(HCoche hc){	// Se ejecuta cuando el coche ha terminado de aparcar físicamente
+	int acera = PARKING_getAlgoritmo(hc);
 	wait_sem(USER_SEM_1);
-	memoria_compartida->turno_aparcar++;
-	// Despertar al chófer que tiene ese nuevo turno
+	memoria_compartida->turno_aparcar[acera]++;
+	// Despertar al chófer de esa acera que tiene ese nuevo turno
 	for (int i = 0; i < nchof; i++) {
-	    if (chof[i].mi_turno == memoria_compartida->turno_aparcar){	// Se busca al chofer que le toca
-	        signal_sem(PARKING_getNSemAforos() + i);	// Se despierta al chofer que tiene el turno
+	    if (chof[i].mi_acera == acera &&
+	        chof[i].mi_turno == memoria_compartida->turno_aparcar[acera]){
+	        signal_sem(PARKING_getNSemAforos() + i);
 	        break;
 	    }
 	}
@@ -588,7 +597,8 @@ void permiso_avance(HCoche hc){
         if(PARKING_getX(hc) != PARKING_getX2(hc)){
             /* Avance horizontal */
             for (int i=0; i<nchof; i++){
-                if (i == chof_id || chof[i].y == -1) continue; 
+                if (i == chof_id || chof[i].y == -1) continue;
+                if (chof[i].mi_acera != chof[chof_id].mi_acera) continue;	// Si no estA en mi acera no compruebo
                 
                 // ¿Choco con dónde ESTÁ el coche ahora mismo? (Protege culos)
                 int choca_actual = (PARKING_getY2(hc) == chof[i].y && 
@@ -611,6 +621,7 @@ void permiso_avance(HCoche hc){
             /* Avance vertical */
             for(int i=0; i<nchof; i++){
                 if(i == chof_id || chof[i].y == -1) continue;
+                if(chof[i].mi_acera != chof[chof_id].mi_acera) continue;	// Si no estA en mi acera no compruebo
 
                 int choca_actual_v = (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
