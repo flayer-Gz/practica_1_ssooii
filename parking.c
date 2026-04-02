@@ -41,6 +41,7 @@ typedef struct {
 	int aceras[4][80];		// Las 4 aceras cada una con 80 espacios (0=libre, 1=ocupado)
 	int turno_aparcar;		// Siguiente coche que le coche que le toca aparcar
 	int turno_dispensador;	// Siguiente turno que da la biblioteca
+    int ultimo_sig_ajuste;  // Marcador del Ultimo que aparcO en esa acera
 } DatosCompartidos;
 
 
@@ -201,9 +202,10 @@ int main(int argc, char *argv[])
     	    memoria_compartida->aceras[i][j] = 0;
         }
     }
-	/* Inicializamos los turnos */
+	/* Inicializamos los turnos y el marcador de posicion de siguiente_ajuste*/
 	memoria_compartida->turno_aparcar = 0;
 	memoria_compartida->turno_dispensador = 0;
+    memoria_compartida->ultimo_sig_ajuste = 0;
 
     /* Mandamos todos los choferes a -1 antes de empezar por si durante la ejecuciOn con 4 chOferes por ejemplo sOlo estAn 2 antendiendo que no bloqueen al quedarse en la (x,y)=0,0*/
     for(int i = 0; i < nchof; i++){
@@ -350,7 +352,7 @@ void chofer(int n){
 	chof_id = n;
 
 	while(42){
-		wait_sem(USER_SEM_2);
+		// Esto ya se protege solo, no hace falta semAforo aquI
 		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
 			perror("[CHOFER] Error al leer del buzón");
 			break;
@@ -361,6 +363,7 @@ void chofer(int n){
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
 			
 			/* Asignacion de turno */
+            wait_sem(USER_SEM_2); // Protegemos el acceso al turno
 			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador++;
 			signal_sem(USER_SEM_2);	// Se deja leer el buzon a otro una vez hemos cogido turno
 
@@ -379,7 +382,6 @@ void chofer(int n){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
 		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
-			signal_sem(USER_SEM_2);	// Dejamos que otro lea el buzon
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
 			chof[chof_id].x = PARKING_getX(msg.hCoche);
@@ -390,7 +392,8 @@ void chofer(int n){
 			PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
 		} else {
 			// Si llega un tipo de mensaje desconocido
-			signal_sem(USER_SEM_2);	// Dejamos que otro lea el buzon
+            fprintf(stderr, "[CHOFER %d] Mensaje desconocido recibido. Ignorando...\n", chof_id);
+            continue;
 		}
 		// Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
 		wait_sem(USER_SEM_1);
@@ -441,8 +444,66 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
 }
 
 int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la segunda acera
+    /*wait_sem(USER_SEM_1);
+    int pos_ultimo = memoria_compartida->ultimo_sig_ajuste; // Guardamos dOnde aparcO el Ultimo
+    int tamano_coche = PARKING_getLongitud(hc); // Averigua cuAnto mide el coche
+    int huecos_consecutivos = 0; 
+    
+    for(int i = pos_ultimo; i<80; i++){
+        if(memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){ // Si el hueco estA vacIo, incremento el contador
+            
+            huecos_consecutivos++;
+            // Si el hueco es suficientemente grande como para que quepa el coche y la celda coincide con la siguiente al ULtimo que aparcO devuelvo esa posiciOn para que el chOfer sepa dOnde aparcar
+            if(tamano_coche == huecos_consecutivos){
+                int posiciOn_aparcamiento = i - huecos_consecutivos + 1; // Devolvemos la primera posiciOn del hueco libre del aparcamiento
 
-    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+                // Bucle para reservar esa posiciOn antes de que nos la quite otro coche
+                for(int j = posiciOn_aparcamiento; j<=i; j++){ 
+                    memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][j] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+                }
+                if(i==79){
+                    memoria_compartida->ultimo_sig_ajuste = 0; // La acera termina en 79 y debe volver a empezar desde el 0
+
+                }else{
+                    memoria_compartida->ultimo_sig_ajuste = i + 1; // Guardamos la posiciOn siguiente al Ultimo que aparcO
+                }
+				signal_sem(USER_SEM_1);
+                return posiciOn_aparcamiento;
+        	}
+        }else{
+            // Si el hueco no estA vacIo (tendrA un 1), reinicio el contador de huecos
+            huecos_consecutivos = 0;
+        }
+    }
+
+    // Si entramos aqui quiere decir que hemos llegado al final de la calle y no hemos encontrado hueco, por lo tanto volvemos a buscar desde el inicio
+    huecos_consecutivos = 0; // Reiniciamos el contador para con partir coches a la mitad
+    for(int i = 0; i < pos_ultimo; i++){
+        if(memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] == 0){ 
+            
+            huecos_consecutivos++;
+            
+            if(tamano_coche == huecos_consecutivos){
+                int posiciOn_aparcamiento = i - huecos_consecutivos + 1; 
+
+                // Reservamos
+                for(int j = posiciOn_aparcamiento; j <= i; j++){ 
+                    memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][j] = 1; 
+                }
+                
+                memoria_compartida->ultimo_sig_ajuste = i + 1; // Guarda la siguiente posiciOn dOnde tendrA que empezar a buscar sitio el siguiente
+                
+                signal_sem(USER_SEM_1);
+                return posiciOn_aparcamiento;
+            }
+        }else{
+            huecos_consecutivos = 0;
+        }
+    }
+    // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
+	signal_sem(USER_SEM_1);
+    return -1; // Todos los sitios ocupados/no suficientemente grandes*/
+    return -2;
 }
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
@@ -547,16 +608,14 @@ void permiso_avance(HCoche hc){
                 }
             }
         }else{
-            /* Avance vertical (Hacemos exactamente lo mismo pero sin la Y) */
+            /* Avance vertical */
             for(int i=0; i<nchof; i++){
                 if(i == chof_id || chof[i].y == -1) continue;
 
-                int choca_actual_v = (PARKING_getY2(hc) == chof[i].y && 
-									  PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
+                int choca_actual_v = (PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
                                       
                 int choca_futuro_v = (chof[i].x_futuro != -1 && 
-									  PARKING_getY2(hc) == chof[i].y_futuro &&
                                       PARKING_getX(hc) < (chof[i].x_futuro + chof[i].longitud) && 
                                       (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x_futuro);
 
@@ -593,7 +652,7 @@ void permiso_avance_commit(HCoche hc){
     chof[chof_id].x_futuro = -1;
     chof[chof_id].y_futuro = -1;
 
-	// TODO: liberar las posiciones del parking cuando el coche ya haya salido a la carretera (y == 2)
+	// Liberar las posiciones del parking cuando el coche ya haya salido a la carretera (y == 2)
     if(chof[chof_id].y == 2 && chof[chof_id].necesita_liberar == 1){ // El coche ha llegado a la carretera y estA desaparcando 
         int inicio = PARKING_getPosiciOnEnAcera(hc);
         int tam = PARKING_getLongitud(hc);
@@ -612,23 +671,6 @@ void permiso_avance_commit(HCoche hc){
     }
     signal_sem(USER_SEM_1); // Dejamos que entre el siguiente
 }
-
-// FunciOn de callback para no mezclar coches que aparcan con coches que desaparcan
-/*void permiso_avance_commit_desaparcar(HCoche hc){
-    if(PARKING_getY(hc) == 2){ //si el coche que estA desaparcando estA en la acera
-        int inicio = PARKING_getPosiciOnEnAcera(hc);
-        int tam = PARKING_getLongitud(hc);
-
-        if (memoria_compartida->aceras[0][inicio] == 1) { // Comprobamos que esa zona sigue a 1
-            // Ponemos a 0 (libre) los huecos exactos que ocupaba el coche
-            for (int j = inicio; j < inicio + tam; j++) {
-                memoria_compartida->aceras[0][j] = 0; 
-            }
-
-            // TODO: AquI pondremos un semAforo con SIGNAL para avisar a los coches que hay sitio nuevo
-        }
-    }
-}*/
 
 
 /* Funciones de semAforos */
