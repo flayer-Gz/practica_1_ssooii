@@ -353,6 +353,7 @@ void chofer(int n){
 
 	while(42){
 		// Esto ya se protege solo, no hace falta semAforo aquI
+		wait_sem(USER_SEM_2);
 		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
 			perror("[CHOFER] Error al leer del buzón");
 			break;
@@ -363,7 +364,6 @@ void chofer(int n){
 			chof[chof_id].necesita_liberar = 0; // Al aparcar, prohibido liberar ningUn hueco
 			
 			/* Asignacion de turno */
-            wait_sem(USER_SEM_2); // Protegemos el acceso al turno
 			chof[chof_id].mi_turno = memoria_compartida->turno_dispensador++;
 			signal_sem(USER_SEM_2);	// Se deja leer el buzon a otro una vez hemos cogido turno
 
@@ -382,6 +382,7 @@ void chofer(int n){
 			PARKING_aparcar(msg.hCoche, NULL, aparcar_commit, permiso_avance, permiso_avance_commit);
 
 		} else if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR){
+			signal_sem(USER_SEM_2); // Se deja que otro lea el buzOn
 			wait_sem(USER_SEM_1); // Acceso Unico al flag de liberaciOn de hueco
 			chof[chof_id].longitud = PARKING_getLongitud(msg.hCoche);
 			chof[chof_id].x = PARKING_getX(msg.hCoche);
@@ -392,8 +393,7 @@ void chofer(int n){
 			PARKING_desaparcar(msg.hCoche, NULL, permiso_avance, permiso_avance_commit);
 		} else {
 			// Si llega un tipo de mensaje desconocido
-            fprintf(stderr, "[CHOFER %d] Mensaje desconocido recibido. Ignorando...\n", chof_id);
-            continue;
+            signal_sem(USER_SEM_2);
 		}
 		// Al terminar la maniobra, "borramos" nuestro coche temporalmente sacándolo del mapa
 		wait_sem(USER_SEM_1);
