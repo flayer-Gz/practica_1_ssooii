@@ -450,6 +450,7 @@ int llegada_primer_ajuste(HCoche hc){ // FunciOn de llegada de coche a la primer
     // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
 	signal_sem(USER_SEM_1);
     return -1; // Todos los sitios ocupados/no suficientemente grandes
+    //return -2;
 }
 
 int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la segunda acera
@@ -518,62 +519,84 @@ int llegada_siguiente_ajuste(HCoche hc){ // FunciOn de llegada de coche a la seg
     }
     // El bucle a acabado y no ha econtrado hueco para ese coche, no puede aparcar aUn
 	signal_sem(USER_SEM_1);
-    return -1; // Todos los sitios ocupados/no suficientemente grandes*/
-    return -2;
+    return -1; // Todos los sitios ocupados/no suficientemente grandes
+    //return -2;
 }
 
 int llegada_mejor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la tercera acera
+    int tamano_coche = PARKING_getLongitud(hc);
+    int algoritmo = PARKING_getAlgoritmo(hc);
+    int tam_mejor = 100;    
+    int pos_mejor = -1;
+    int huecos_consecutivos = 0;
 
-	// TODO: Al usar esta funcion a veces se queda congelado y a veces no asigna la posicion correcta hay que darle una vuelta a la logica
-	
-	/*
-	int tam_mejor = 100;	// TamaNo del hueco mas justo (pequeNo)
-	int pos_mejor = -1;
-	int huecos_consecutivos = 0;
-	int tamano_coche = PARKING_getLongitud(hc);
-	int algoritmo = PARKING_getAlgoritmo(hc);
+    wait_sem(USER_SEM_1);
 
-	wait_sem(USER_SEM_1);
-
-	// Sitio mas justo
-	for (int i=0; i<81; i++){
-		if (i < 80 && memoria_compartida->aceras[algoritmo][i] == 0){
-			huecos_consecutivos++;
-		} else {
-			// LLegamos al final del hueco
-			if (huecos_consecutivos >= tamano_coche && huecos_consecutivos <= tam_mejor){
-				// Si es el heco mas justo hasta ahora guardamos su posicion
-				tam_mejor = huecos_consecutivos;
-				pos_mejor = i - huecos_consecutivos;
-			}
-			huecos_consecutivos=0;
-		}
-	}
-
-    if (pos_mejor == -1){
-		// No se encontrO
-		signal_sem(USER_SEM_1);
-		return -1;
-	}
-	// Reserva del hueco
-	for(int i = pos_mejor; i<PARKING_getLongitud(hc)+pos_mejor; i++){ 
-        memoria_compartida->aceras[PARKING_getAlgoritmo(hc)][i] = 1; // Ponemos a 1 (ocupado) todos esos huecos que antes estaban a 0 (libre)
+    for (int i = 0; i <= 80; i++) {
+        if (i < 80 && memoria_compartida->aceras[algoritmo][i] == 0) {
+            huecos_consecutivos++;
+        } else {
+            // Evaluamos el hueco al encontrar un coche (1) o al llegar al borde final (80)
+            if (huecos_consecutivos >= tamano_coche && huecos_consecutivos < tam_mejor) {
+                tam_mejor = huecos_consecutivos;
+                pos_mejor = i - huecos_consecutivos;
+            }
+            huecos_consecutivos = 0;
+        }
     }
-	signal_sem(USER_SEM_1);
 
-	return pos_mejor;
+    if (pos_mejor == -1) { // No hemos encontrado hueco vAlido
+        signal_sem(USER_SEM_1);
+        return -1;
+    }
 
-	*/
-
-	return -2;
+    // Reserva del hueco solo del tamaNo del coche
+    for(int j = pos_mejor; j < pos_mejor + tamano_coche; j++) { 
+        memoria_compartida->aceras[algoritmo][j] = 1; 
+    }
+    
+    signal_sem(USER_SEM_1);
+    return pos_mejor;
+	//return -2;
 }
 
 int llegada_peor_ajuste(HCoche hc){ // FunciOn de llegada de coche a la cuarta acera
-	// Sitio con mas espacio
+    int tamano_coche = PARKING_getLongitud(hc);
+    int algoritmo = PARKING_getAlgoritmo(hc);
+    int tam_peor = 0;    
+    int pos_peor = -1;
+    int huecos_consecutivos = 0;
+
+    wait_sem(USER_SEM_1);
+
+    for (int i = 0; i <= 80; i++) {
+        if (i < 80 && memoria_compartida->aceras[algoritmo][i] == 0) {
+            huecos_consecutivos++;
+        } else {
+            // Evaluamos el hueco al encontrar un coche (1) o al llegar al borde final (80)
+            if (huecos_consecutivos >= tamano_coche && huecos_consecutivos > tam_peor) {
+                tam_peor = huecos_consecutivos;
+                pos_peor = i - huecos_consecutivos;
+            }
+            huecos_consecutivos = 0;
+        }
+    }
+
+    if (pos_peor == -1) { // No hemos encontrado hueco vAlido
+        signal_sem(USER_SEM_1);
+        return -1;
+    }
+
+    // Reserva del hueco solo del tamaNo del coche
+    for(int j = pos_peor; j < pos_peor + tamano_coche; j++) { 
+        memoria_compartida->aceras[algoritmo][j] = 1; 
+    }
+    
+    signal_sem(USER_SEM_1);
+    return pos_peor;
 
 
-
-    return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
+    //return -2; // Devolvemos -2 para que no moleste de momento en la ejecuciOn
 
 }
 
