@@ -64,7 +64,8 @@ int llegada_siguiente_ajuste(HCoche hc);
 int llegada_mejor_ajuste(HCoche hc);
 int llegada_peor_ajuste(HCoche hc);
 
-void chofer(int n);
+void chofer(int n, int PA, int PD);
+void gestor_prioridades(int PA, int PD);
 
 void aparcar_commit(HCoche hc);
 void permiso_avance(HCoche hc);
@@ -253,27 +254,30 @@ int main(int argc, char *argv[])
     }
 
     
-	/* CreaciOn procesos hijos (chOferes, cronOmetro) */
-	pid = malloc((nchof+1)*sizeof(pid_t));
+	/* CreaciOn procesos hijos (chOferes, cronOmetro y gestor de cola si es necesario) */
+    int num_hijos = nchof + 1; // ChOferes y cronOmetro
+    if(PA == 1 || PD == 1){
+        num_hijos++; // Necesitaremos un hueco mAs para el gestor
+    }
+	pid = malloc((num_hijos)*sizeof(pid_t));
 
-	for (int i=0; i<nchof+1; i++){
+	for (int i=0; i<num_hijos; i++){
 	    switch(pid[i]=fork()){
 	        case -1:
-	            perror("Error en fork de creaciOn cronOmetro");
+	            perror("Error en fork");
 	            kill(getpid(), SIGINT);	// Envia la señal SIGINT y salta a la manejadora
 	            break;
 	        case 0:
 				// Hijos
-				if (i == 0){
-					// write(STDOUT_FILENO, "\n[CRONÓMETRO] Iniciando cuenta atrás de 30 segundos...\n", 55);
+				if(i == 0){ // Es el hijo cronOmetro
                     alarm(30);	// Programa la señal SIGALRM para dentro de 30s
-                    // write(STDOUT_FILENO, "\nAlarma activada\n", 17);
 					pause();	// Espera a SIGALRM
-                    // write(STDOUT_FILENO, "\nSi escribe esto no sabemos nada de C\n", 38);
-				} else{
+				}else if(i >= 1 && i <= nchof){ // Es cualquiera de los hijos chOfer
 					// ChOferes
-					chofer(i-1);	// -1 para que estEn numerados desde el 0
-				}
+					chofer(i-1, PA, PD);	// -1 para que estEn numerados desde el 0
+				}else{ // Es el hijo opcional del gestor
+                    gestor_prioridades(PA, PD);
+                } 
 				exit(0);
 			default: 
 			break;
@@ -351,14 +355,19 @@ void manejador_SIGALRM(int sig){
 }
 
 /* FunciOn que ejecutan todos los chOferes */
-void chofer(int n){
+void chofer(int n, int PA, int PD){
 	struct PARKING_mensajeBiblioteca msg;
 	chof_id = n;
 
+    // Determinamos cual va a ser el tipo de cola de prioridad que tenga el chOfer
+    long tipo_lectura = PARKING_MSG; // FIFO por defecto
+    if(PA == 1 || PD == 1){ // Si hay alguna prioridad distinta a FIFO activa
+        tipo_lectura = -2; // Usamos el truco de coger el tipo de mensaje mAs bajo
+    }
 	while(42){
-		// Esto ya se protege solo, no hace falta semAforo aquI
 		wait_sem(USER_SEM_2);
-		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
+
+		if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), tipo_lectura, 0) == -1){	// sizeof(msg) - sizeof(long) porque el campo tipo no cuenta para el mensaje
 			perror("[CHOFER] Error al leer del buzón");
 			break;
 		}
@@ -419,6 +428,31 @@ void chofer(int n){
 		}
 		signal_sem(USER_SEM_1);
 	}
+}
+
+void gestor_prioridades(int PA, int PD){ // FunciOn encargada de gestionar las prioridades de cola (SOlo se ejecuta si PA o PD estAn activos)
+    struct PARKING_mensajeBiblioteca msg;
+
+    while (42) {
+        // Lee Unica y exclusivamente los mensajes crudos de la biblioteca
+        if (msgrcv(buz_id, &msg, sizeof(msg) - sizeof(long), PARKING_MSG, 0) == -1) {
+            break; // Si el padre destruye el buzOn al salir, el msgrcv falla y el hijo muere en paz
+        }
+
+        // TraducciOn de prioridades
+        if (PA == 1) {
+            if (msg.subtipo == PARKING_MSGSUB_APARCAR) msg.tipo = 1; // Urgente
+            else msg.tipo = 2; // Secundario
+        } else if (PD == 1) {
+            if (msg.subtipo == PARKING_MSGSUB_DESAPARCAR) msg.tipo = 1; // Urgente
+            else msg.tipo = 2; // Secundario
+        }
+
+        // Reenvía el mensaje al mismo buzón con su nueva etiqueta
+        if (msgsnd(buz_id, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+            break;
+        }
+    }
 }
 
 /* Ajustes */
