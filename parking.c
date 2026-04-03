@@ -408,6 +408,8 @@ void chofer(int n){
 		chof[chof_id].y = -1; // Lo mandamos a Cuenca para que nadie choque con él mientras lee el buzón
 		chof[chof_id].x_futuro = -1;
 		chof[chof_id].y_futuro = -1;
+        chof[chof_id].mi_turno = -1;
+        chof[chof_id].mi_acera = -1;
 		// Despierto a cualquiera que estuviera esperando
 		for (int i = 0; i < nchof; i++) {
 			if (chof[i].esperando_a == chof_id) {
