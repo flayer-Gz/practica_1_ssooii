@@ -1,0 +1,61 @@
+=======SEUDOCODIGO=======
+GESTOR DE PRIORIDADES                                         CHÓFER[i] (Bucle Principal)
+=======================                                       =============================
+(Solo si PA o PD activo)
+Por_siempre_jamás                                              Por_siempre_jamás
+{                                                              {
+  // Lee msg crudo de la biblioteca                           // Recepción y Turno
+  Recibir(Buzón, tipo=100)                                       W(USER_SEM_2)
+                                                                 Recibir(Buzón, tipo_lectura) // 100 si FIFO, -2 si PA/PD
+                                                                 Si (mensaje == aparcar){
+  // Traducción                                                  W(USER_SEM_1)
+  Si (es mensaje urgente según política)                         mi_turno = turno_dispensador++
+      nuevo_tipo = 1                                             S(USER_SEM_2)
+  Sino                                                           
+      nuevo_tipo = 2                                             // Barrera de Turno 
+                                                                 Mientras (turno_aparcar != mi_turno){
+  // Reenvío con nueva prioridad                                     S(USER_SEM_1) 
+  Enviar(Buzón, nuevo_tipo)                                          W(SEM_CHOF[i]) // Se echa a dormir
+}                                                                    W(USER_SEM_1) // Lo recupera al despertar
+                                                                   }
+                                                                 Reserva la posiciOn
+                                                                 S (USER_SEM_1)
+                                                                 Llama a la funciOn de aparcar
+                                                                  } sino si(mensaje == desaparcar){
+                                                                    S (USER_SEM_2)
+                                                                    W (USER_SEM_1)
+                                                                    Cambia variables internas
+                                                                    S (USER_SEM_1)
+                                                                    Llama a la funciOn de desaparcar
+                                                                  } sino {
+                                                                    S (USER_SEM_2) // Ha llegado un mensaje desconocido
+                                                                  }
+                                                                 
+                                                                 // Limpieza final
+                                                                 W(USER_SEM_1)
+                                                                 Borrar mis coordenadas (x=-1, y=-1)
+                                                                 Borrar mi turno y mi acera (-1)
+                                                                 Para cada coche "j" que estuviera esperándome:
+                                                                     S(SEM_CHOF[j]) // Despertar a los bloqueados
+                                                                 S(USER_SEM_1)
+                                                                 }
+
+=========SEUDOCODIGO FUNCIONES DE RELLAMADA=========
+
+PERMISO_AVANCE                              PERMISO_AVANCE_COMMIT               APARCAR_COMMIT
+=================================          =======================             ================
+  Mientras (chocado == verdadero) {          W(USER_SEM_1)                       W(USER_SEM_1)
+      W(USER_SEM_1)                          Actualizar mis coordenadas(x,y)
+                                                                                 // Pasar el turno al siguiente
+      Comprobar trayectoria del resto        // Liberar si procede               turno_aparcar++
+      Si (mi trayectoria pisa a otro)        Si (he salido a la carretera)       Para cada coche "i":
+          chocado = verdadero                    Liberar acera (poner a 0)           Si (turno_i == turno_aparcar)
+          esperando_a = ese_coche                                                        S(SEM_CHOF[i])
+                                             // Despertar bloqueados
+      Si (chocado)                           Para cada coche "j" esperando:      S(USER_SEM_1)
+          S(USER_SEM_1)                          S(SEM_CHOF[j])
+          W(SEM_CHOF[este chofer]) // Duerme
+      Sino                                   S(USER_SEM_1)
+          Reservar mis coordenadas futuras
+          S(USER_SEM_1)
+  }
