@@ -19,6 +19,7 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <errno.h>
 
 union semun {
     int val;                /* Valor para SETVAL */
@@ -749,25 +750,27 @@ void permiso_avance_commit(HCoche hc){
 }
 
 
-/* Funciones de semAforos */
-// FunciOn para hacer un WAIT
+/* Funciones de semAforos INMUNES A SEÑALES */
 void wait_sem(int num_semAforo) {
-    struct sembuf sops[1]; // Actuamos solo sobre 1 semAforo
+    struct sembuf sops[1]; 
     sops[0].sem_num = num_semAforo; 
     sops[0].sem_op  = -1;           
-    sops[0].sem_flg = 0;           
-    if (semop(sem_id, sops, 1) == -1) {
-        perror("Error al realizar wait_sem");
+    sops[0].sem_flg = 0;            
+    while (semop(sem_id, sops, 1) == -1) {
+        if (errno == EINTR) continue; // Si nos interrumpe una señal, insistimos
+        perror("Error crítico al realizar wait_sem");
+        break;
     }
 }
 
-// FunciON para hacer un SIGNAL
 void signal_sem(int num_semAforo) {
-    struct sembuf sops[1]; // Actuamos solo sobre 1 semAforo
+    struct sembuf sops[1]; 
     sops[0].sem_num = num_semAforo; 
     sops[0].sem_op  = 1;            
     sops[0].sem_flg = 0;
-    if (semop(sem_id, sops, 1) == -1) {
-        perror("Error al realizar signal_sem");
+    while (semop(sem_id, sops, 1) == -1) {
+        if (errno == EINTR) continue; // Si nos interrumpe una señal, insistimos
+        perror("Error crítico al realizar signal_sem");
+        break;
     }
 }
