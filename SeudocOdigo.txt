@@ -1,4 +1,10 @@
 =======SEUDOCODIGO=======
+SemAforos y valor inicial:
+
+USER_SEM_1 = 1
+USER_SEM_2 = 1
+SemAforo ChOferes = 0 // Todos igual
+
 GESTOR DE PRIORIDADES                                         CHÓFER[i] (Bucle Principal)
 =======================                                       =============================
 (Solo si PA o PD activo)
