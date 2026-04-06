@@ -1,0 +1,174 @@
+====================================================================
+DOCUMENTACIÓN DE IMPLEMENTACIÓN - parking.c
+====================================================================
+
+
+--- ARQUITECTURA DE PROCESOS ---
+
+El programa arranca un proceso padre que crea entre N+1 y N+2 hijos
+mediante fork():
+  - 1 proceso "cronómetro": hace alarm(30) y luego pause(). Al saltar
+    los 30 segundos, SIGALRM llama a PARKING_fin(1) y exit.
+  - N procesos "chófer"
+  - 1 proceso "gestor de prioridades": solo se crea si se
+    pasaron los argumentos PA o PD. Ejecuta gestor_prioridades(PA, PD).
+
+El padre, tras lanzar todos los hijos, llama a PARKING_simulación() que
+es bloqueante. Cuando termina, envía SIGINT a sí mismo para limpiar los
+recursos antes de terminar.
+
+
+--- RECURSOS IPC ---
+
+1. SEMÁFOROS
+   Tres grupos de semáforos:
+   - Los primeros PARKING_getNSemAforos() los gestiona la biblioteca.
+   - Luego N semáforos, uno por chófer.
+     Estos empiezan a 0 y se usan para dormir/despertar a cada chófer
+     individualmente.
+   - USER_SEM_1: mutex general (valor inicial 1) que protege el acceso
+     a la memoria compartida y al array chof[].
+   - USER_SEM_2: mutex del buzón (valor inicial 1) que garantiza que
+     solo un chófer lee del buzón a la vez.
+
+2. MEMORIA COMPARTIDA
+   El bloque total es: espacio de la biblioteca + offset
+   + sizeof(DatosCompartidos) + N*sizeof(InfoChofer).
+
+   El offset se calcula para alinear a 4 bytes la zona del usuario,
+   evitando Bus Error.
+
+   Dentro hay dos estructuras contiguas:
+   - DatosCompartidos: las 4 aceras (arrays de 80 enteros, 0=libre/
+     1=ocupado), los contadores de turno por acera (turno_aparcar y
+     turno_dispensador), y el marcador ultimo_sig_ajuste.
+   - Array de InfoChofer[N] colocado justo a continuación.
+   	 Cada chófer tiene ahí su posición actual (x,y),
+	 su posición futura (x_futuro, y_futuro),
+     longitud del coche, a quién está esperando (esperando_a), si tiene
+     que liberar hueco al salir (necesita_liberar), y su turno y acera
+     actuales.
+
+
+--- SISTEMA DE PRIORIDADES (PA / PD) ---
+
+En modo normal (sin PA ni PD), los choferes leen el buzón con tipo
+PARKING_MSG y se sirven en orden FIFO.
+
+Cuando se activa PA o PD se introduce un proceso gestor intermedio:
+
+  gestor_prioridades(PA, PD):
+    - Lee en bucle los mensajes crudos de la biblioteca (tipo PARKING_MSG).
+    - Los reetiqueta antes de reenviarlos al mismo buzón:
+        · Con PA activo: APARCAR -> tipo 1, DESAPARCAR -> tipo 2.
+        · Con PD activo: DESAPARCAR -> tipo 1, APARCAR -> tipo 2.
+    - Los choferes entonces leen con tipo_lectura = -2, que significa
+	 "dame el mensaje de tipo más bajo disponible".
+      Así, los mensajes de tipo 1 siempre se despachan antes que los
+      de tipo 2, consiguiendo la prioridad deseada.
+
+
+--- FLUJO DEL CHÓFER ---
+
+El bucle principal de chofer(n, PA, PD) es infinito. En cada iteración:
+
+  1. Hace wait en USER_SEM_2 para ser el único leyendo el buzón.
+  2. Llama a msgrcv bloqueante. Queda dormido hasta que llegue un mensaje.
+
+  Si el mensaje es APARCAR:
+    - Toma USER_SEM_1, pone necesita_liberar=0, anota su acera y coge
+      turno (turno_dispensador[acera]++).
+    - Suelta USER_SEM_2 para que otro chófer pueda leer el buzón
+      mientras este espera su turno.
+    - Espera en un bucle hasta que turno_aparcar[acera] == su turno.
+      Si no es su turno, suelta USER_SEM_1 y se duerme en su semáforo
+      personal. Al despertar, vuelve a comprobar.
+    - Cuando le toca, anota posición y llama a PARKING_aparcar.
+
+  Si el mensaje es DESAPARCAR:
+    - Suelta USER_SEM_2 directamente (no hay sistema de turnos al salir).
+    - Toma USER_SEM_1, rellena su info y activa necesita_liberar=1.
+    - Llama a PARKING_desaparcar.
+
+  Al terminar cualquier maniobra:
+    - Toma USER_SEM_1, pone x/y/x_futuro/y_futuro a -1 (el coche
+      "desaparece" del mapa mientras el chófer vuelve a leer el buzón).
+    - Despierta a cualquier chófer que tuviera esperando_a == chof_id
+      con signal en su semáforo personal.
+
+
+--- SISTEMA DE TURNOS PARA APARCAR ---
+
+Hay un par de contadores por acera en memoria compartida:
+  - turno_dispensador[acera]: el siguiente número de turno a repartir.
+  - turno_aparcar[acera]: el turno que puede maniobrar ahora mismo.
+
+Cuando llega un coche a aparcar, el chófer coge turno_dispensador y lo
+incrementa. Luego espera en bucle hasta que turno_aparcar
+iguale su número.
+
+Cuando aparcar_commit() se ejecuta (el coche ya aparcó físicamente),
+se incrementa turno_aparcar y se busca al chófer de esa acera que tiene
+ese nuevo turno para despertarle con signal en su semáforo personal.
+
+Esto asegura que los coches de la misma acera maniobran de uno en uno
+y en orden de llegada.
+
+
+--- DETECCIÓN Y GESTIÓN DE COLISIONES (permiso_avance) ---
+
+Antes de cada movimiento, la biblioteca llama a permiso_avance(hc).
+Esta función comprueba si la posición destino (X2, Y2) choca con:
+  - La posición actual de cualquier otro chófer de la misma acera.
+  - La posición futura reservada de cualquier otro chófer de la misma
+    acera (campo x_futuro/y_futuro).
+
+Si hay choque, el chófer anota esperando_a = i (índice del que le
+bloquea), suelta USER_SEM_1 y se duerme en su semáforo personal.
+Cuando ese otro chófer se mueve (en permiso_avance_commit), le despierta.
+Al despertar, el bucle vuelve a empezar por si hay otro obstáculo.
+
+Si no hay choque, el chófer reserva x_futuro/y_futuro para que otros
+sepan a dónde se va a mover, y sale del bucle.
+
+La comprobación distingue movimiento horizontal de vertical.
+Solo se comprueban choferes de la misma acera.
+
+
+--- LIBERACIÓN DE HUECO AL DESAPARCAR (permiso_avance_commit) ---
+
+permiso_avance_commit se llama tras cada movimiento efectivo. Actualiza
+la posición real del chófer y limpia x_futuro/y_futuro.
+
+Cuando el coche llega a y==2 (sale a la carretera) y tiene necesita_liberar
+activado, libera las celdas de la acera que ocupaba (pone a 0 en el array).
+Esto ocurre aquí y no antes para que el hueco no quede libre mientras el
+coche todavía está físicamente bloqueándolo.
+
+Al final, despierta a todos los que lo estaban esperando.
+
+
+--- ALGORITMOS DE LLEGADA ---
+
+Todos están protegidos por USER_SEM_1 porque leen y escriben el array
+de aceras.
+
+La reserva se hace dentro de la sección crítica,
+justo al encontrar el hueco, para evitar que dos llegadas simultáneas
+reserven el mismo sitio.
+
+
+--- LIMPIEZA Y SEÑALES ---
+
+SIGINT (manejador_SIGINT): solo actúa en el padre. Mata todos los hijos
+primero con SIGTERM, espera con waitpid a que terminen, y luego llama a
+limpiar_recursos() que hace IPC_RMID sobre semáforos, buzón y memoria
+compartida. Acaba con _exit(0).
+
+SIGALRM (manejador_SIGALRM): se dispara en el hijo cronómetro. Llama a
+PARKING_fin(1) para notificar a la biblioteca y hace _exit(0). El padre,
+bloqueado en PARKING_simulación(), recibe el aviso por la biblioteca y
+acaba normalmente mandándose SIGINT a sí mismo.
+
+Se usa _exit en lugar de exit dentro de manejadores y procesos hijo para
+no ejecutar atexit ni flush de stdio, evitando comportamiento indefinido.
