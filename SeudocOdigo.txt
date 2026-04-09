@@ -23,16 +23,16 @@ PARA i DESDE 0 HASTA num_hijos - 1:
 
         CASO 0 (proceso hijo):
             SI i == 0:
-                → Es el hijo cronómetro
+                Es el hijo cronómetro
                 Programar alarma para 30 segundos
                 Esperar a que llegue la señal SIGALRM
 
             SI 1 <= i <= nchof:
-                → Es un hijo chófer
+                Es un hijo chófer
                 Ejecutar función chofer(i-1, PA, PD)
 
             SI NO:
-                → Es el hijo gestor opcional
+                Es el hijo gestor opcional
                 Ejecutar función gestor_prioridades(PA, PD)
 
             Terminar proceso hijo (exit 0)
@@ -63,7 +63,7 @@ Por_siempre_jamás
 }
 
 CHÓFER[i] (Bucle Principal)
-=============================
+===========================
 
 Por_siempre_jamás
 {
@@ -107,20 +107,133 @@ Por_siempre_jamás
 
 =========SEUDOCODIGO FUNCIONES DE RELLAMADA=========
 
-PERMISO_AVANCE                              PERMISO_AVANCE_COMMIT               APARCAR_COMMIT
-=================================          =======================             ================
-  Mientras (chocado == verdadero) {          W(USER_SEM_1)                       W(USER_SEM_1)
-      W(USER_SEM_1)                          Actualizar mis coordenadas(x,y)
-                                                                                 // Pasar el turno al siguiente
-      Comprobar trayectoria del resto        // Liberar si procede               turno_aparcar++
-      Si (mi trayectoria pisa a otro)        Si (he salido a la carretera)       Para cada coche "i":
-          chocado = verdadero                    Liberar acera (poner a 0)           Si (turno_i == turno_aparcar)
-          esperando_a = ese_coche                                                        S(SEM_CHOF[i])
-                                             // Despertar bloqueados
-      Si (chocado)                           Para cada coche "j" esperando:      S(USER_SEM_1)
-          S(USER_SEM_1)                          S(SEM_CHOF[j])
-          W(SEM_CHOF[este chofer]) // Duerme
-      Sino                                   S(USER_SEM_1)
-          Reservar mis coordenadas futuras
-          S(USER_SEM_1)
-  }
+
+PERMISO_AVANCE
+==============
+    Mientras (chocado == verdadero){
+        W(USER_SEM_1)
+
+        Comprobar trayectoria del resto
+        Si (mi trayectoria pisa a otro)
+            chocado = verdadero
+            esperando_a = ese_coche
+
+        Si (chocado){
+            S(USER_SEM_1)
+            W(SEM_CHOF[este chofer])	// Duerme
+        }
+        Sino{
+            Reservar mis coordenadas futuras
+            S(USER_SEM_1)
+        }
+    }
+
+PERMISO_AVANCE_COMMIT
+=====================
+    W(USER_SEM_1)
+    Actualizar mis coordenadas(x,y)
+
+    // Liberar si procede
+    Si (he salido a la carretera)
+        Liberar acera (poner a 0)
+
+    // Despertar bloqueados
+    Para cada coche "j" esperando:
+        S(SEM_CHOF[j])
+
+    S(USER_SEM_1)
+
+APARCAR_COMMIT
+==============
+    W(USER_SEM_1)
+
+    // Pasar el turno al siguiente
+    turno_aparcar++
+    Para cada coche "i":
+        Si (turno_i == turno_aparcar)
+            S(SEM_CHOF[i])
+
+    S(USER_SEM_1)
+
+
+=========SEUDOCODIGO FUNCIONES AJUSTES=========
+
+PRIMER AJUSTE
+=============
+
+    W(USER_SEM_1)	// Acceso exclusivo a memoria compartida
+
+    Buscar hueco libre en la acera
+        
+    SI se encuentra hueco{
+        Reservar posición (marcar como ocupado)
+        S(USER_SEM_1)
+        return posición
+	}
+
+    S(USER_SEM_1)	// Liberar acceso
+    return -1		// Sin hueco disponible
+
+
+
+
+SIGUIENTE AJUSTE
+================
+    W(USER_SEM_1)	// Acceso exclusivo a memoria compartida
+
+    Ajustar pos_ultimo hacia atrás si su hueco se liberO
+
+    Buscar hueco libre desde pos_ultimo hasta el final
+
+    SI se encuentra hueco{
+        Reservar posición (marcar como ocupado)
+        Actualizar ultimo_sig_ajuste
+        S(USER_SEM_1)
+        return posición
+    }
+
+    Buscar hueco libre desde el inicio hasta pos_ultimo
+
+    SI se encuentra hueco{
+        Reservar posición (marcar como ocupado)
+        Actualizar ultimo_sig_ajuste
+        S(USER_SEM_1)
+        return posición
+    }
+
+    S(USER_SEM_1)	// Liberar acceso
+    return -1		// Sin hueco disponible
+
+
+MEJOR AJUSTE
+============
+    W(USER_SEM_1)	// Acceso exclusivo a memoria compartida
+
+    Recorrer la acera completa identificando todos los huecos libres
+
+    SI no se encontró ningún hueco válido{
+        S(USER_SEM_1)
+        return -1		// Sin hueco disponible
+    }
+
+    Reservar el hueco más ajustado al tamaño del coche (marcar como ocupado)
+    S(USER_SEM_1)		// Liberar acceso
+    return pos_mejor
+
+
+
+
+PEOR AJUSTE
+===========
+    W(USER_SEM_1)	// Acceso exclusivo a memoria compartida
+
+    Recorrer la acera completa identificando todos los huecos libres
+
+    SI no se encontró ningún hueco válido{
+        S(USER_SEM_1)
+        return -1		// Sin hueco disponible
+    }
+
+    Reservar el hueco más grande disponible (marcar como ocupado)
+    S(USER_SEM_1)		// Liberar acceso
+    return pos_peor
