@@ -3,48 +3,107 @@ SemAforos y valor inicial:
 
 USER_SEM_1 = 1
 USER_SEM_2 = 1
-SemAforo ChOferes = 0 // Todos igual
+SemAforos ChOferes = 0 // Todos igual
 
-GESTOR DE PRIORIDADES                                         CHÓFER[i] (Bucle Principal)
-=======================                                       =============================
+
+
+CREACION DE PROCESOS
+====================
+
+PARA i DESDE 0 HASTA num_hijos - 1:
+
+    pid[i] = fork()
+
+	SEGUN pid[i]:
+
+        CASO -1 (error):
+            Mostrar error "Error en fork"
+            Enviar señal SIGINT al proceso actual
+            Salir del SEGÚN
+
+        CASO 0 (proceso hijo):
+            SI i == 0:
+                → Es el hijo cronómetro
+                Programar alarma para 30 segundos
+                Esperar a que llegue la señal SIGALRM
+
+            SI 1 <= i <= nchof:
+                → Es un hijo chófer
+                Ejecutar función chofer(i-1, PA, PD)
+
+            SI NO:
+                → Es el hijo gestor opcional
+                Ejecutar función gestor_prioridades(PA, PD)
+
+            Terminar proceso hijo (exit 0)
+
+        CASO default (proceso padre):
+            No hacer nada, continuar el bucle
+
+FIN PARA
+
+
+
+GESTOR DE PRIORIDADES
+=====================
 (Solo si PA o PD activo)
-Por_siempre_jamás                                              Por_siempre_jamás
-{                                                              {
-  // Lee msg crudo de la biblioteca                           // Recepción y Turno
-  Recibir(Buzón, tipo=100)                                       W(USER_SEM_2)
-                                                                 Recibir(Buzón, tipo_lectura) // 100 si FIFO, -2 si PA/PD
-                                                                 Si (mensaje == aparcar){
-  // Traducción                                                  W(USER_SEM_1)
-  Si (es mensaje urgente según política)                         mi_turno = turno_dispensador++
-      nuevo_tipo = 1                                             S(USER_SEM_2)
-  Sino                                                           
-      nuevo_tipo = 2                                             // Barrera de Turno 
-                                                                 Mientras (turno_aparcar != mi_turno){
-  // Reenvío con nueva prioridad                                     S(USER_SEM_1) 
-  Enviar(Buzón, nuevo_tipo)                                          W(SEM_CHOF[i]) // Se echa a dormir
-}                                                                    W(USER_SEM_1) // Lo recupera al despertar
-                                                                   }
-                                                                 Reserva la posiciOn
-                                                                 S (USER_SEM_1)
-                                                                 Llama a la funciOn de aparcar
-                                                                  } sino si(mensaje == desaparcar){
-                                                                    S (USER_SEM_2)
-                                                                    W (USER_SEM_1)
-                                                                    Cambia variables internas
-                                                                    S (USER_SEM_1)
-                                                                    Llama a la funciOn de desaparcar
-                                                                  } sino {
-                                                                    S (USER_SEM_2) // Ha llegado un mensaje desconocido
-                                                                  }
-                                                                 
-                                                                 // Limpieza final
-                                                                 W(USER_SEM_1)
-                                                                 Borrar mis coordenadas (x=-1, y=-1)
-                                                                 Borrar mi turno y mi acera (-1)
-                                                                 Para cada coche "j" que estuviera esperándome:
-                                                                     S(SEM_CHOF[j]) // Despertar a los bloqueados
-                                                                 S(USER_SEM_1)
-                                                                 }
+Por_siempre_jamás
+{
+	// Lee msg crudo de la biblioteca
+	Recibir(Buzón, tipo=100)
+
+	// Traducción
+	si (es mensaje urgente según política)
+    	nuevo_tipo = 1
+	sino                                                           
+    	nuevo_tipo = 2
+
+	// Reenvío con nueva prioridad
+	Enviar(Buzón, nuevo_tipo)
+}
+
+CHÓFER[i] (Bucle Principal)
+=============================
+
+Por_siempre_jamás
+{
+	// Recepción y Turno
+	W(USER_SEM_2)
+	Recibir(Buzón, tipo_lectura) // 100 si FIFO, -2 si PA/PD
+	si (mensaje == aparcar){
+		W(USER_SEM_1)
+		mi_turno = turno_dispensador++
+		S(USER_SEM_2)
+
+		// Barrera de Turno
+		Mientras (turno_aparcar != mi_turno){
+			S(USER_SEM_1) 
+			W(SEM_CHOF[i]) // Se echa a dormir
+			W(USER_SEM_1) // Lo recupera al despertar
+		}
+
+		Reserva la posiciOn
+		S (USER_SEM_1)
+		Llama a la funciOn de aparcar
+
+	} sino si(mensaje == desaparcar){
+		S (USER_SEM_2)
+		W (USER_SEM_1)
+		Cambia variables internas
+		S (USER_SEM_1)
+		Llama a la funciOn de desaparcar
+	} sino {
+		S (USER_SEM_2) // Ha llegado un mensaje desconocido
+	}
+		
+	// Limpieza final
+	W(USER_SEM_1)
+	Borrar mis coordenadas (x=-1, y=-1)
+	Borrar mi turno y mi acera (-1)
+	Para cada coche "j" que estuviera esperándome:
+		S(SEM_CHOF[j]) // Despertar a los bloqueados
+	S(USER_SEM_1)
+}
 
 =========SEUDOCODIGO FUNCIONES DE RELLAMADA=========
 
