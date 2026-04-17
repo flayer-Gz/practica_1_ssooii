@@ -690,7 +690,8 @@ void permiso_avance(HCoche hc){
                 if(i == chof_id || chof[i].y == -1) continue;
                 if(chof[i].mi_acera != chof[chof_id].mi_acera) continue;	// Si no estA en mi acera no compruebo
 
-                int choca_actual_v = (PARKING_getY2(hc) == chof[i].y && PARKING_getX(hc) < (chof[i].x + chof[i].longitud) && (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
+                int choca_actual_v = (PARKING_getY2(hc) == chof[i].y && PARKING_getX(hc) < (chof[i].x + chof[i].longitud) &&
+									 (PARKING_getX(hc) + PARKING_getLongitud(hc)) > chof[i].x);
                                       
                 int choca_futuro_v = (chof[i].y_futuro != -1 && PARKING_getY2(hc) == chof[i].y_futuro && 
                                       PARKING_getX(hc) < (chof[i].x_futuro + chof[i].longitud) && 
@@ -754,7 +755,7 @@ void permiso_avance_commit(HCoche hc){
 void wait_sem(int num_semAforo) {
     struct sembuf sops[1]; 
     sops[0].sem_num = num_semAforo; 
-    sops[0].sem_op  = -1;           
+    sops[0].sem_op  = -1;
     sops[0].sem_flg = 0;            
     while (semop(sem_id, sops, 1) == -1) {
         if (errno == EINTR) continue; // Si nos interrumpe una señal, insistimos
